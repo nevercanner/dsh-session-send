@@ -116,12 +116,57 @@ The session row does have one, so the switch lives there and acts on **that sess
 | `transport.kind` | `'sqlite'` | `sqlite` / `file` / `in-process` |
 | `registry.sources` | `['dsh-team','dsh-sessions']` | which registries to expose |
 | `registry.stateDir` | `'.agent-teams'` | dsh-team state directory name |
+| `registry.requireRegistration` | `true` | unregistered sessions are invisible and unaddressable |
 | `router.allowBroadcast` | `true` | allow `to: "*"` |
 | `router.maxPayloadChars` | `20000` | payload size ceiling |
 | `router.dshTeam.target` | `'auto'` | `auto` / `service` / `mailbox` |
 | `labels` | `{}` | optional name overrides: `{ "<session id>": "gate" }` |
 | `ui.entry` | `true` | show the sidebar entry |
 | `ui.pollMs` | `4000` | panel poll interval |
+
+## The reply guard: a missed reply cannot pass silently
+
+A real failure: six messages sent, all returned `steered`. Only one reply came back. The other
+four sessions **had received and processed them** — their event streams show the message, a full
+turn, and a written answer — but they wrote the answer into their own conversation and never
+called `dsh_bus_send`. To the sender it looked like delivery had failed.
+
+Putting "call this tool to reply" in the message text is still only a reminder. The plugin
+intervenes at the host's own turn boundaries instead:
+
+| step | host event | what the guard does |
+|---|---|---|
+| 1 | `agent/inbox/claimed` | a bus message leaves a session's inbox → record a debt: this session owes that sender a reply |
+| 2 | `tools/result` | `dsh_bus_send` / `dsh_bus_reply` addressed at the creditor → settle the debt |
+| 3 | `agent/turn-stopping` | the turn is about to close with no live tool calls, and a debt remains → inject a nudge into that session's own inbox and wake it, so it runs another turn and actually replies |
+
+Deliberate limits:
+
+- **It nudges, it never answers on the session's behalf.** A fabricated reply would be worse than
+  a missing one.
+- Only messages this plugin delivered are tracked (`source.origin`), so ordinary human turns are
+  never touched.
+- Each debt is nudged at most twice, then dropped with a warning — no infinite loop.
+- The nudge text offers an explicit "no reply needed" exit.
+
+## Message header
+
+A delivered message reads as a message, not a log line. The sender is a name, not a uuid:
+
+```
+📨 来自 管线维护 的消息
+
+第三章就绪，请复核。
+---
+回复：dsh_bus_reply({ replyTo: "...", text: "..." })
+或：  dsh_bus_send({ to: "管线维护", text: "..." })
+（只在你自己这一轮里回答不算回复 —— 发送方看不到）
+不需要回复就忽略本段。
+message_id=...
+```
+
+The technical identifiers (`message_id`, `reply_to`) sit at the bottom next to the reply
+instructions, where they are actually needed as tool arguments — not in the reader's face.
 
 ## Naming sessions: self-registration (recommended)
 
@@ -145,6 +190,33 @@ After that:
 - it takes effect immediately; no restart, no config editing
 
 Clear a registration with `dsh_bus_register({ name: "" })`.
+
+## Registration means participation
+
+**Registering is not just naming — it is how a session joins the bus.**
+
+A project switch decides whether the bus works at all. Which sessions appear on it is a
+separate, explicit decision:
+
+| | unregistered session | registered session |
+|---|---|---|
+| appears in `dsh_bus_agents` | no | yes |
+| addressable by name | no | yes |
+| addressable by raw session id | **no** | yes |
+| can be delivered to | no | yes |
+| nudged by the reply guard | no | yes |
+
+Measured on one real project: 121 sessions, 7 of them doing the actual work. Listing all 121
+buried the real lanes and made it easy to message the wrong session — so the default is strict.
+
+Small projects can opt out with `registry.requireRegistration: false`, which makes every
+session in the project addressable. `dsh_bus_agents` still reports only participants;
+diagnostics can use the internal `listAll()` to see everyone.
+
+**A new session learns who it is on first contact.** The first message delivered to a session
+is prefixed with a short introduction — its own bus name, the roster of other participants,
+and how to reply. It appears exactly once per session per project (`.dsh-bus/greeted.json`),
+and the roster excludes the reader, so nobody is invited to message their own session.
 
 **Batch form** (initialise a whole project in one call):
 
@@ -263,6 +335,9 @@ Test groups:
 | `tests/project-isolation.test.mjs` | **project isolation** and nested projects |
 | `tests/inbox-and-labels.test.mjs` | inbox vs outbox, display names |
 | `tests/self-register.test.mjs` | **self-registration** and addressable keys |
+| `tests/message-loop.test.mjs` | **message loop** — header readability, reply guide, claims |
+| `tests/reply-guard.test.mjs` | **reply guard** state machine (debt, settlement, nudge ceiling) |
+| `tests/onboarding.test.mjs` | **new-session onboarding** and the participation gate |
 
 ## Error codes
 

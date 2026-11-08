@@ -342,10 +342,22 @@ function normalizePayload(value: BusPayload | string): BusPayload {
 }
 
 /** 投递给 dsh-team 的正文：带上 kind / from / message id / replyTo，对方模型能直接读懂。 */
+/**
+ * 把一条消息渲染成推给目标会话的正文。
+ *
+ * ── 为什么带「怎么回复」的说明 ────────────────────────────────────
+ * 真实事故：消息成功送达、目标也真的处理了，但 5 个会话里 4 个把回答
+ * **只写在自己的对话里**，没有调 `dsh_bus_send` 发回去。发送方看到的是
+ * 「6 条消息只回来 1 条」，像是投递失败 —— 其实是接收方不知道要回。
+ *
+ * 所以正文末尾固定附一段回复指引：告诉它用哪个工具、`to` 填什么、
+ * 以及「只在自己对话里说等于没回」。这段话很短，但决定消息闭环成不成立。
+ */
 export function formatContent(message: BusMessage): string {
+  const sender = message.fromName ?? message.fromId
   const header = [
     `[dsh-bus ${message.kind}]`,
-    `from=${message.fromName ?? message.fromId}`,
+    `from=${sender}`,
     `message_id=${message.id}`,
     message.replyTo === undefined ? undefined : `reply_to=${message.replyTo}`,
   ]
@@ -353,7 +365,18 @@ export function formatContent(message: BusMessage): string {
     .join(' ')
   const data =
     message.payload.data === undefined ? '' : `\n\n<data>${JSON.stringify(message.payload.data)}</data>`
-  return `${header}\n\n${message.payload.text}${data}`
+
+  // 回复指引：用 replyTo 最省事（收件人自动取原发送方），也说明按名字回的写法。
+  const howToReply = [
+    '',
+    '---',
+    `要回复这条，调用 dsh_bus_reply({ replyTo: "${message.id}", text: "..." })；`,
+    `或者 dsh_bus_send({ to: "${sender}", text: "..." })。`,
+    '**只在你自己这一轮里回答不算回复** —— 发送方看不到，必须走上面两个工具。',
+    '不需要回复就忽略本段。',
+  ].join('\n')
+
+  return `${header}\n\n${message.payload.text}${data}${howToReply}`
 }
 
 function fromLabel(message: BusMessage): string {

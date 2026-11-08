@@ -119,3 +119,69 @@ export function nameOf(registry: NameRegistry, sessionId: string): string | unde
   const name = entry.name.trim()
   return name === '' ? undefined : name
 }
+
+// ── 身份声明（claims）────────────────────────────────────────────
+// 名册里的名字是「别人给起的」，claim 是「会话自己说的」。
+// 两者分开存，才能发现批量报名时配错的 id —— 那种错误从名册本身看不出来
+// （每个 id 都有名字），只有会话自述才能暴露。
+
+/** 声明文件名。 */
+export const CLAIMS_FILE = 'claims.json'
+
+export interface ClaimEntry {
+  /** 会话自述的 lane / 身份。 */
+  claim: string
+  at: number
+}
+
+export type ClaimRegistry = Record<string, ClaimEntry>
+
+export function claimsPathFor(projectRoot: string): string {
+  return join(projectRoot, '.dsh-bus', CLAIMS_FILE)
+}
+
+/** 读声明文件；缺失或损坏都返回空对象。 */
+export async function readClaims(projectRoot: string): Promise<ClaimRegistry> {
+  const file = claimsPathFor(projectRoot)
+  if (!existsSync(file)) return {}
+  try {
+    const raw = await readFile(file, 'utf8')
+    if (raw.trim() === '') return {}
+    const parsed = JSON.parse(raw)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
+    const out: ClaimRegistry = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      const entry = value as Partial<ClaimEntry> | null
+      if (entry === null || typeof entry !== 'object') continue
+      if (typeof entry.claim !== 'string' || entry.claim.trim() === '') continue
+      out[key] = {
+        claim: entry.claim.trim(),
+        at: typeof entry.at === 'number' && Number.isFinite(entry.at) ? entry.at : 0,
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+/** 写入一个会话的身份声明（原子替换）。 */
+export async function writeClaim(
+  projectRoot: string,
+  sessionId: string,
+  claim: string,
+): Promise<ClaimRegistry> {
+  const id = String(sessionId ?? '').trim()
+  if (id === '') throw new Error('缺少 session id')
+  const registry = await readClaims(projectRoot)
+  const trimmed = String(claim ?? '').trim()
+  if (trimmed === '') delete registry[id]
+  else registry[id] = { claim: trimmed, at: Date.now() }
+
+  const file = claimsPathFor(projectRoot)
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`
+  await mkdir(dirname(file), { recursive: true })
+  await writeFile(temporary, JSON.stringify(registry, null, 2) + '\n', 'utf8')
+  await rename(temporary, file)
+  return registry
+}

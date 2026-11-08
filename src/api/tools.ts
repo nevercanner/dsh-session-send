@@ -15,7 +15,7 @@
 import type { BusService } from './service.ts'
 import { BusError, type BusKind, type SendRequest } from '../types.ts'
 import { asToolResult } from './json-safe.ts'
-import { writeName, readNames } from '../registry/names.ts'
+import { writeName, readNames, readClaims, writeClaim } from '../registry/names.ts'
 
 export interface ToolDeps {
   bus: BusService
@@ -417,6 +417,72 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
         persisted,
         total: Object.keys(verify).length,
         projectRoot: runtime.projectRoot,
+      })
+    },
+  })
+
+  // ── 名册校对：列出「注册名」与「会话自述」对不上的条目 ──
+  // 真实场景：批量报名时把 id 和 lane 名字配错了，之后每条消息都发给了错的人。
+  // 光看名册看不出来（名字都在），要靠会话自己的身份声明来比对。
+  register({
+    name: 'dsh_bus_whoami',
+    description:
+      'Report this session\'s bus identity, and check the whole project roster for mismatches. ' +
+      'Use it when messages seem to reach the wrong lane: it shows your registered name, your session id, ' +
+      'and any registry entry whose name does not match what that session says it is. ' +
+      'Pass `claim` to also record what you assert your lane is (stored beside the name, never overwrites it).',
+    parameters: {
+      claim: {
+        type: 'string',
+        description: 'Optional: what YOU say your lane is (e.g. "chapter"). Recorded for mismatch checking.',
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: true, properties: {} },
+      render: (_args, value: any) => {
+        const lines = [`dsh_bus_whoami: ${value?.name ?? '(未注册)'}  id=${value?.sessionId ?? '?'}`]
+        if (value?.claim !== undefined) lines.push(`  你的声明：${value.claim}`)
+        if (Array.isArray(value?.mismatches) && value.mismatches.length > 0) {
+          lines.push(`  ⚠️ 名册有 ${value.mismatches.length} 处名字与自述不一致：`)
+          for (const m of value.mismatches) {
+            lines.push(`    ${m.id}：注册名 ${m.registered} / 自述 ${m.claimed}`)
+          }
+        } else {
+          lines.push('  名册与自述一致（或还没有人声明过）')
+        }
+        return text(lines.join('\n'))
+      },
+    },
+    async execute(args: any, exec: any) {
+      const runtime = await bus.runtimeFor(exec)
+      const sessionId = String(exec?.agent?.id ?? '')
+      if (sessionId === '') fail('E_TARGET_NOT_FOUND', '无法确定调用者身份')
+
+      const names = await readNames(runtime.projectRoot)
+      const claims = await readClaims(runtime.projectRoot)
+      const claim = typeof args?.claim === 'string' ? args.claim.trim() : undefined
+      if (claim !== undefined && claim !== '') {
+        await writeClaim(runtime.projectRoot, sessionId, claim)
+      }
+
+      const mismatches: Array<Record<string, unknown>> = []
+      for (const [id, entry] of Object.entries(names)) {
+        const asserted = claims[id]
+        if (asserted === undefined) continue
+        if (asserted.claim === entry.name) continue
+        mismatches.push({ id, registered: entry.name, claimed: asserted.claim })
+      }
+
+      return asToolResult({
+        sessionId,
+        name: names[sessionId]?.name,
+        claim: claim ?? claims[sessionId]?.claim,
+        mismatches,
+        roster: Object.entries(names).map(([id, v]) => ({
+          id,
+          name: v.name,
+          claimed: claims[id]?.claim,
+        })),
       })
     },
   })

@@ -122,6 +122,7 @@ test('嵌套项目：loop 独立后，外层项目看不到 loop 的会话', asy
     ctx,
     projectRoot: OUTER,
     knownProjectRoots: [OUTER, LOOP],
+    requireRegistration: false,
   })
   const outerEntries = await outerProvider.list()
   assert.deepEqual(outerEntries.map((e) => e.id).sort(), ['outer-1', 'outer-2'], '只留外层的')
@@ -132,6 +133,7 @@ test('嵌套项目：loop 独立后，外层项目看不到 loop 的会话', asy
     ctx,
     projectRoot: LOOP,
     knownProjectRoots: [OUTER, LOOP],
+    requireRegistration: false,
   })
   const loopEntries = await loopProvider.list()
   assert.deepEqual(loopEntries.map((e) => e.id).sort(), ['loop-1', 'loop-2'], '只留 loop 的')
@@ -144,7 +146,7 @@ test('嵌套项目：loop 未独立时，它的会话归外层（兼容旧行为
     persisted: [rec('outer-1', OUTER), rec('loop-1', LOOP)],
   })
   // 只知道外层一个项目根
-  const provider = new DshSessionsProvider({ ctx, projectRoot: OUTER, knownProjectRoots: [OUTER] })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: OUTER, knownProjectRoots: [OUTER] , requireRegistration: false })
   const entries = await provider.list()
   assert.deepEqual(entries.map((e) => e.id).sort(), ['loop-1', 'outer-1'], '子树内都算')
 })
@@ -165,7 +167,7 @@ test('注册表：只列本项目会话，跨项目一律过滤', async () => {
       rec('loop-1', LOOP),
     ],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })
   const entries = await provider.list()
 
   assert.deepEqual(
@@ -182,7 +184,7 @@ test('注册表：resolve 也不认跨项目目标', async () => {
     live: {},
     persisted: [rec('a-1', 'D:\\proj-a'), rec('b-1', 'D:\\proj-b')],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })
 
   assert.equal((await provider.resolve('a-1')).length, 1, '本项目能解析')
   assert.equal((await provider.resolve('b-1')).length, 0, '跨项目解析不到')
@@ -197,7 +199,7 @@ test('注册表：会话缺 cwd 时排除（宁可少列，不可越界）', asy
       rec('ok', 'D:\\proj-a'),
     ],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })
   const entries = await provider.list()
   assert.deepEqual(entries.map((e) => e.id), ['ok'])
 })
@@ -207,7 +209,7 @@ test('注册表：活 Agent 也要过项目边界（不能因为"活着"就放�
     live: { 'b-live': fakeAgent('b-live', 'D:\\proj-b') },
     persisted: [],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })
   const entries = await provider.list()
   assert.equal(entries.length, 0, '别的项目的活 Agent 也不该出现')
 })
@@ -221,7 +223,7 @@ test('端到端：跨项目发送 → E_TARGET_NOT_FOUND（不是静默丢弃）
     live: {},
     persisted: [rec('a-1', 'D:\\proj-a'), rec('b-1', 'D:\\proj-b')],
   })
-  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })])
+  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })])
   const router = createRouter({
     config: { ...DEFAULT_CONFIG, enabled: true },
     transport: new InProcessTransport(),
@@ -250,7 +252,7 @@ test('端到端：广播只发给本项目的人', async () => {
       rec('b-2', 'D:\\proj-b'),
     ],
   })
-  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: PROJECT_A })])
+  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: PROJECT_A , requireRegistration: false })])
   const router = createRouter({
     config: { ...DEFAULT_CONFIG, enabled: true },
     transport: new InProcessTransport(),

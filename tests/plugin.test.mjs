@@ -193,6 +193,12 @@ test('开启：能发消息、能读信箱、能列身份；卸载后工具与�
     })
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
+    // 默认要求「报名后才参与」（不打扰无关会话）。
+    // 这个用例测的是装配与工具可用性，所以先让两个会话报名。
+    const registerTool = host.tools.get('dsh_bus_register')
+    await registerTool.execute({ name: 'alpha' }, { agent: { id: 's-1' } })
+    await registerTool.execute({ name: 'beta' }, { agent: { id: 's-2' } })
+
     const { internals } = await import('../src/index.ts')
     assert.ok(internals().mounted !== undefined)
 
@@ -235,7 +241,8 @@ test('HTTP 面：status / agents / messages / send / read 五个路由都可用'
     await writeProjectConfig(dir, {
       enabled: true,
       transport: { kind: 'file', fileDir: join(dir, '.dsh-bus') },
-      registry: { sources: ['dsh-sessions'] },
+      // 这个用例测路由，不测参与门槛 —— 关闭「报名后才参与」
+      registry: { sources: ['dsh-sessions'], requireRegistration: false },
     })
     host = fakeHost()
     host.provide('agents', {

@@ -88,7 +88,7 @@ test('注册表：活 Agent 与磁盘记录都列出，status 区分 live / inac
       record('s-idle-2', { live: false, title: '门禁' }),
     ],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT , requireRegistration: false })
   const entries = await provider.list()
 
   assert.equal(entries.length, 3, '活 1 + 未激活 2')
@@ -109,7 +109,7 @@ test('注册表：resolve 也能命中未激活会话（这是之前 E_TARGET_NO
     liveAgents: {},
     persisted: [record('s-idle-1', { title: '跑章选手' })],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT , requireRegistration: false })
 
   const byId = await provider.resolve('s-idle-1')
   assert.equal(byId.length, 1)
@@ -125,7 +125,7 @@ test('注册表：sessionQuery 缺席时只列活 Agent（不报错）', async (
     get: (name) =>
       name === 'agents' ? { list: () => [fakeAgent('s-live')], get: (id) => (id === 's-live' ? fakeAgent('s-live') : undefined) } : undefined,
   }
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT , requireRegistration: false })
   const entries = await provider.list()
   assert.equal(entries.length, 1)
   assert.equal(entries[0].status, 'live')
@@ -136,7 +136,7 @@ test('注册表：同一 id 出现两次时，活 Agent 优先（不重复）', 
     liveAgents: { 's-1': fakeAgent('s-1') },
     persisted: [record('s-1', { live: true }), record('s-1', { live: false })],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT , requireRegistration: false })
   const entries = await provider.list()
   assert.equal(entries.length, 1)
   assert.equal(entries[0].status, 'live')
@@ -233,7 +233,7 @@ test('端到端：7 个 loop 会话只激活 1 个，仍能发给其余 6 个（
     resumeImpl: (id) => (revived[id] ? { agent: revived[id] } : undefined),
   })
 
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP_ROOT , requireRegistration: false })
   const registry = new CompositeRegistry([provider])
   const transport = new InProcessTransport()
   const router = createRouter({

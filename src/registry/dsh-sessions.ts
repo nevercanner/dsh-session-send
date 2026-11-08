@@ -90,6 +90,11 @@ export interface DshSessionsProviderOptions {
    */
   knownProjectRoots?: readonly string[]
   /**
+   * 是否要求报名后才参与（默认 true）。
+   * 见 types.ts 的 `registry.requireRegistration` 说明。
+   */
+  requireRegistration?: boolean
+  /**
    * 会话显示名映射：session id → 可读名。
    * 来自项目配置的 `labels`，优先级高于宿主标题与兜底名。
    */
@@ -131,7 +136,19 @@ export class DshSessionsProvider implements RegistryProvider {
   }
 
   /**
-   * 列出**本项目**的可寻址会话：活 Agent 优先，再补上磁盘上有记录但未激活的。
+   * 列出**本项目**的**已报名**会话。
+   *
+   * ── 为什么只列已报名的（真实需求）──────────────────────────────
+   * 早先的实现会列出项目里所有会话。实测一个项目有 121 个会话、
+   * 只有 7 个真正参与工作 —— 剩下 114 个「能被看见、能被发消息、
+   * 但不知道自己是谁」的会话混在列表里，既制造误发的机会，
+   * 也让真正的工作线难以分辨。
+   *
+   * 现在：**报名 = 参与**。
+   *   · 没报名的会话不出现在任何人的 to 列表里
+   *   · 不会被投递、不会被催办
+   *   · 项目开关仍然控制「这个项目能不能用总线」（接入是自动的）
+   *   · 但「我参与」是会话自己显式声明的事
    *
    * 顺序有意义：同 id 时活 Agent 的条目胜出（它带更准的 status）。
    * 跨项目的会话一律过滤掉（见 `belongsToProject`）。
@@ -147,6 +164,7 @@ export class DshSessionsProvider implements RegistryProvider {
       const entry = this.toEntry(agent, names)
       if (entry.id === '' || seen.has(entry.id)) continue
       if (!this.belongsToProject(entry.workspace)) continue
+      if (!this.isParticipating(entry.id, names)) continue
       seen.add(entry.id)
       entries.push(entry)
     }
@@ -156,10 +174,51 @@ export class DshSessionsProvider implements RegistryProvider {
       const entry = this.toEntryFromRecord(record, names)
       if (entry === undefined || entry.id === '' || seen.has(entry.id)) continue
       if (!this.belongsToProject(entry.workspace)) continue
+      if (!this.isParticipating(entry.id, names)) continue
       seen.add(entry.id)
       entries.push(entry)
     }
 
+    return entries
+  }
+
+  /**
+   * 这个会话是否参与总线。
+   *
+   * 判定：在名册里登记过名字，或在配置 `labels` 里被显式命名。
+   * 两者都是「有人明确表示它要参与」的证据；兜底名不算（那是自动派生的）。
+   *
+   * `registry.requireRegistration = false` 时全部放行 —— 小项目用。
+   */
+  private isParticipating(sessionId: string, names: Readonly<NameRegistry>): boolean {
+    if (this.options.requireRegistration === false) return true
+    if (nameOf(names, sessionId) !== undefined) return true
+    const labelled = this.options.labels?.[sessionId]
+    return typeof labelled === 'string' && labelled.trim() !== ''
+  }
+
+  /**
+   * 列出本项目**所有**会话（含未报名的）—— 只用于诊断/UI 提示，
+   * 不参与寻址。让使用者能看到「还有多少会话没接入」。
+   */
+  async listAll(): Promise<AgentEntry[]> {
+    const seen = new Set<string>()
+    const entries: AgentEntry[] = []
+    const names = await this.currentNames()
+    for (const agent of this.liveAgents()) {
+      const entry = this.toEntry(agent, names)
+      if (entry.id === '' || seen.has(entry.id)) continue
+      if (!this.belongsToProject(entry.workspace)) continue
+      seen.add(entry.id)
+      entries.push(entry)
+    }
+    for (const record of await this.persistedSessions()) {
+      const entry = this.toEntryFromRecord(record, names)
+      if (entry === undefined || entry.id === '' || seen.has(entry.id)) continue
+      if (!this.belongsToProject(entry.workspace)) continue
+      seen.add(entry.id)
+      entries.push(entry)
+    }
     return entries
   }
 
@@ -236,6 +295,9 @@ export class DshSessionsProvider implements RegistryProvider {
     }
 
     const matches = (entry: AgentEntry): boolean => {
+      // 未报名 = 不参与：连 id 也不能寻址。
+      // 否则「不打扰无关会话」的保证就被绕过了（知道 id 仍能直接发）。
+      if (!this.isParticipating(entry.id, names)) return false
       if (entry.id === ref) return true
       // 只有「绑定在 id 上的名字」才可作为引用：自注册名 / labels / 宿主 title。
       return this.boundNames(entry.id, names).some((name) => name === ref)

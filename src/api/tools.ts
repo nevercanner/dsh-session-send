@@ -357,9 +357,10 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
             rejected.push({ sessionId: rawId, reason: '空 session id' })
             continue
           }
-          // 项目边界：不允许给别的项目的会话起名
-          const hits = await registry.resolve(sessionId)
-          if (hits.length === 0) {
+          // 项目边界：不允许给别的项目的会话起名。
+          // 用 sessionBelongsToProject（含未报名）—— 它们正要被报名，还没进名册。
+          const inProject = await bus.sessionBelongsToProject(sessionId, exec)
+          if (!inProject) {
             rejected.push({ sessionId, reason: '不属于本项目' })
             continue
           }
@@ -400,9 +401,13 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       if (target === '') fail('E_TARGET_NOT_FOUND', '无法确定要登记的会话 id')
       const requested = typeof args?.name === 'string' ? args.name.trim() : ''
 
-      // 只允许登记本项目内的会话（跨项目写名册是越权）
-      const allowed = await registry.resolve(target)
-      if (allowed.length === 0) {
+      // 只允许登记本项目内的会话（跨项目写名册是越权）。
+      //
+      // 注意：不能用 `registry.resolve()` 校验 —— 它现在只认**已报名**的会话，
+      // 而这里正要给一个还没报名的会话报名，会形成死循环（永远报不上名）。
+      // 所以改用 `listAll()`（含未报名）做项目归属校验。
+      const inProject = await bus.sessionBelongsToProject(target, exec)
+      if (!inProject) {
         fail('E_TARGET_NOT_FOUND', `会话 ${target} 不属于本项目，不能在这里登记名字`)
       }
 

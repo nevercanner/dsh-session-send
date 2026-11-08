@@ -95,6 +95,18 @@ export interface BusConfig {
   registry: {
     sources: RegistrySource[]
     stateDir: string
+    /**
+     * 是否要求会话「报名后才参与总线」。
+     *
+     * - `true`（默认）：只有调过 `dsh_bus_register` 的会话才出现在列表里、
+     *   才能被寻址、才会被投递。**未报名的会话完全不受打扰。**
+     * - `false`：项目里所有会话都可寻址（小项目、会话少时更方便，
+     *   代价是无关会话会出现在列表里）。
+     *
+     * 默认 `true` 的理由：实测一个项目 121 个会话里只有 7 个真正参与，
+     * 全接入会让列表被无关会话淹没，也制造误发机会。
+     */
+    requireRegistration: boolean
   }
   router: {
     allowBroadcast: boolean

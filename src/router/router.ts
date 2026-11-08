@@ -32,6 +32,7 @@ import {
   type SendRequest,
 } from '../types.ts'
 import type { Registry } from '../registry/registry.ts'
+import { greetingFor, type RosterEntry } from '../registry/onboarding.ts'
 import type { Transport } from '../transport/transport.ts'
 import type { DshTeamAdapter } from '../registry/dsh-team-adapter.ts'
 import type { DeliveryMode, SessionPusher } from '../transport/session-push.ts'
@@ -42,6 +43,11 @@ export interface RouterOptions {
   config: BusConfig
   transport: Transport
   registry: Registry
+  /**
+   * 项目根（可选）：用于「首次投递附自我介绍」的记录位置。
+   * 缺席时不做自我介绍（其余功能不受影响）。
+   */
+  projectRoot?: string
   /** dsh-team adapter（可选；缺席时 dsh-team 目标只落库不唤醒）。 */
   dshTeam?: DshTeamAdapter
   /**
@@ -177,6 +183,33 @@ export class DefaultRouter implements Router {
     return this.deliverMany(from, hits, kind, payload, { ...request, meta })
   }
 
+  /**
+   * 首次投递给某个会话时生成自我介绍；已经介绍过就返回 undefined。
+   *
+   * 失败一律返回 undefined —— 介绍是附加价值，不能因为它让消息发不出去。
+   */
+  private async firstContactGreeting(target: AgentEntry): Promise<string | undefined> {
+    const root = this.options.projectRoot
+    if (root === undefined || root === '') return undefined
+    try {
+      // 通讯录：本项目其它已参与的会话
+      const roster: RosterEntry[] = []
+      for (const entry of await this.options.registry.list()) {
+        if (entry.id === target.id) continue
+        roster.push({ name: entry.name })
+      }
+      return await greetingFor({
+        projectRoot: root,
+        targetId: target.id,
+        targetName: target.name,
+        roster,
+      })
+    } catch (error) {
+      this.options.logger?.warn?.(`[dsh-session-send] 生成首次接入说明失败（不影响投递）：${String(error)}`)
+      return undefined
+    }
+  }
+
   async history(query: {
     involving?: string
     to?: string
@@ -281,7 +314,11 @@ export class DefaultRouter implements Router {
     if (this.options.sessions !== undefined) {
       const mode = deliveryModeOf(request)
       try {
-        const pushed = await this.options.sessions.push(target.id, formatContent(message), mode, {
+        // 首次投递给某个会话时，正文前面附一段自我介绍：
+        // 它叫什么、本项目还有谁、怎么回。只附一次（见 registry/onboarding.ts）。
+        const greeting = await this.firstContactGreeting(target)
+        const body = greeting === undefined ? formatContent(message) : `${greeting}\n\n${formatContent(message)}`
+        const pushed = await this.options.sessions.push(target.id, body, mode, {
           // 真实发送者：回传守卫靠它判断「这条是谁发的、欠谁一条回复」
           sender: { id: message.fromId, name: message.fromName },
         })

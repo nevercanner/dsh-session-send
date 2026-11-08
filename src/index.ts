@@ -145,7 +145,7 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
     })
     // 跨会话投递器：把消息真正推进目标的活会话（这是「不用人工转发」的关键）
     const sessions = new SessionPusher({ ctx, logger })
-    const router = createRouter({ config: busConfig, transport, registry, dshTeam, sessions, logger })
+    const router = createRouter({ config: busConfig, transport, registry, projectRoot, dshTeam, sessions, logger })
     return {
       config: busConfig,
       projectRoot,

@@ -16,7 +16,7 @@ export const DEFAULT_CONFIG: BusConfig = {
   enabled: false,
   scope: 'project',
   transport: { kind: 'sqlite' },
-  registry: { sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams' },
+  registry: { sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams', requireRegistration: true },
   router: {
     allowBroadcast: true,
     maxPayloadChars: 20000,
@@ -124,6 +124,12 @@ export function validateFallback(raw: unknown): ConfigValidation {
     registry: {
       sources,
       stateDir: asString(registryRaw['stateDir'], DEFAULT_CONFIG.registry.stateDir, 'registry.stateDir', warnings),
+      requireRegistration: asBool(
+        registryRaw['requireRegistration'],
+        DEFAULT_CONFIG.registry.requireRegistration,
+        'registry.requireRegistration',
+        warnings,
+      ),
     },
     router: {
       allowBroadcast: asBool(
@@ -169,6 +175,7 @@ export function createZodSchema(z: any): any {
   const registry = z.object({
     sources: z.array(z.enum(['dsh-team', 'dsh-sessions'])).default(['dsh-team', 'dsh-sessions']),
     stateDir: z.string().default('.agent-teams'),
+    requireRegistration: z.boolean().default(true),
   })
   const router = z.object({
     allowBroadcast: z.boolean().default(true),
@@ -188,7 +195,7 @@ export function createZodSchema(z: any): any {
     enabled: z.boolean().default(false),
     scope: z.literal('project').default('project'),
     transport: transport.default({ kind: 'sqlite' }),
-    registry: registry.default({ sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams' }),
+    registry: registry.default({ sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams', requireRegistration: true }),
     router: router.default({ allowBroadcast: true, maxPayloadChars: 20000, dshTeam: { enabled: true, target: 'auto' } }),
     labels: z.record(z.string(), z.string()).default({}),
     ui: ui.default({ entry: true, pollMs: 4000 }),

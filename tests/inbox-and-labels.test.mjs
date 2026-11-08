@@ -49,7 +49,7 @@ function host({ persisted = [], live = {} } = {}) {
 
 test('inbox：只列出「发给我的」，自己发出去的不算', async () => {
   const ctx = host({ persisted: [rec('me'), rec('other')] })
-  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: LOOP })])
+  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: LOOP , requireRegistration: false })])
   const transport = new InProcessTransport()
   const router = createRouter({ config: { ...DEFAULT_CONFIG, enabled: true }, transport, registry })
 
@@ -75,7 +75,7 @@ test('inbox：只列出「发给我的」，自己发出去的不算', async () 
 
 test('inbox：未读数与收件箱条数一致（自己发的不计入未读）', async () => {
   const ctx = host({ persisted: [rec('me'), rec('other')] })
-  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: LOOP })])
+  const registry = new CompositeRegistry([new DshSessionsProvider({ ctx, projectRoot: LOOP , requireRegistration: false })])
   const transport = new InProcessTransport()
   const router = createRouter({ config: { ...DEFAULT_CONFIG, enabled: true }, transport, registry })
 
@@ -95,7 +95,7 @@ test('inbox：未读数与收件箱条数一致（自己发的不计入未读）
 
 test('显示名：宿主 title 优先', async () => {
   const ctx = host({ persisted: [rec('s-1', { title: '跑章选手' })] })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP , requireRegistration: false })
   const [entry] = await provider.list()
   assert.equal(entry.name, '跑章选手')
 })
@@ -120,7 +120,7 @@ test('显示名：都没有时用「时间 + id 尾段」，保证可区分', as
       rec('c883810e-da37-4ca6-a53c-007b9aa16eae', { createdAt: 1794106364882 }),
     ],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP , requireRegistration: false })
   const entries = await provider.list()
 
   // 关键：三个名字必须互不相同（旧实现全是 "session-"）
@@ -136,14 +136,20 @@ test('显示名：无 createdAt 时退化为 id 尾段', async () => {
   const ctx = host({
     persisted: [{ header: { id: 'session-abc123def456', cwd: LOOP }, live: false }],
   })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP })
+  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP , requireRegistration: false })
   const [entry] = await provider.list()
   assert.match(entry.name, /abc123def456|def456|3456/, `应该含 id 尾段，实际：${entry.name}`)
 })
 
 test('显示名：labels 里为空字符串时不算命中', async () => {
   const ctx = host({ persisted: [rec('s-1', { title: '真标题' })] })
-  const provider = new DshSessionsProvider({ ctx, projectRoot: LOOP, labels: { 's-1': '   ' } })
+  // requireRegistration: false —— 这个用例只关心显示名解析，不关心参与门槛
+  const provider = new DshSessionsProvider({
+    ctx,
+    projectRoot: LOOP,
+    labels: { 's-1': '   ' },
+    requireRegistration: false,
+  })
   const [entry] = await provider.list()
   assert.equal(entry.name, '真标题', '空白 label 应被忽略')
 })

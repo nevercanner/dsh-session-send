@@ -95,6 +95,8 @@ export function createRegistry(options: CreateRegistryOptions): RegistryBundle {
             ],
             // 使用者配置的会话显示名（解决"121 个会话全叫 session-"）
             labels: config.labels,
+            // 是否要求报名后才参与（默认 true：不打扰无关会话）
+            requireRegistration: config.registry.requireRegistration,
             // 不传 names：provider 每次从 <项目>/.dsh-bus/names.json 读，
             // 这样会话自注册后立刻生效，不需要重装配。
             logger: options.logger,

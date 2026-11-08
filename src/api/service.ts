@@ -295,6 +295,28 @@ export class BusService {
     return (await this.useFor(exec)).registry
   }
 
+  /**
+   * 某个会话是否属于本次调用所在的项目。
+   *
+   * 与 `registry.resolve()` 的区别：这里**包含未报名的会话**。
+   * 报名本身需要这个判断 —— 用 resolve 会形成死循环（未报名就查不到，
+   * 查不到就不许报名）。
+   */
+  async sessionBelongsToProject(
+    sessionId: string,
+    exec?: { agent?: { id?: string; session?: { header?: { cwd?: string } } } },
+  ): Promise<boolean> {
+    const runtime = await this.useFor(exec)
+    const registry = runtime.registry as unknown as { listAll?: () => Promise<Array<{ id: string }>> }
+    if (typeof registry.listAll !== 'function') {
+      // 其它 provider 没有 listAll：退回到 resolve（它们通常不要求报名）
+      const hits = await runtime.registry.resolve(sessionId)
+      return hits.length > 0
+    }
+    const all = await registry.listAll()
+    return all.some((entry) => entry.id === sessionId)
+  }
+
   private disabledReasonOf(runtime: BusRuntime): string | undefined {
     if (runtime.config.enabled) return undefined
     if (runtime.configDegraded) return '项目配置解析失败，已强制关闭'

@@ -121,6 +121,11 @@ test('点一下开启：写文件 + 热生效，随后立刻能发消息（不�
     })
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
+    // 默认「报名后才参与」—— 这个用例测开关热生效，先让两个会话报名
+    const registerTool = host.tools.get('dsh_bus_register')
+    await registerTool.execute({ name: 'alpha' }, { agent: { id: 's-1' } })
+    await registerTool.execute({ name: 'beta' }, { agent: { id: 's-2' } })
+
     // ① 初始：关闭
     const before = await call(host, '/plugins/dsh-session-send/status')
     assert.equal(before.body.status.enabled, false)

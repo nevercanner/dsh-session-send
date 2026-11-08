@@ -14,6 +14,8 @@ export interface CreateRouterOptions {
   config: BusConfig
   transport: Transport
   registry: Registry
+  /** 项目根：用于「首次投递附自我介绍」的记录位置。 */
+  projectRoot?: string
   dshTeam?: DshTeamAdapter
   /** 跨会话投递器：把消息推进目标的活会话（缺它就只能落库）。 */
   sessions?: SessionPusher
@@ -25,6 +27,7 @@ export function createRouter(options: CreateRouterOptions): Router {
     config: options.config,
     transport: options.transport,
     registry: options.registry,
+    projectRoot: options.projectRoot,
     dshTeam: options.dshTeam,
     sessions: options.sessions,
     logger: options.logger,

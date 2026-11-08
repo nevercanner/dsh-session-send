@@ -64,6 +64,30 @@ export class CompositeRegistry implements Registry {
     return entries
   }
 
+  /**
+   * 列出所有会话（含未报名的）—— 只用于「报名前的项目归属校验」与诊断。
+   * 不参与寻址。
+   */
+  async listAll(): Promise<AgentEntry[]> {
+    const seen = new Set<string>()
+    const entries: AgentEntry[] = []
+    for (const provider of this.providers) {
+      let rows: AgentEntry[] = []
+      try {
+        const withAll = provider as unknown as { listAll?: () => Promise<AgentEntry[]> }
+        rows = typeof withAll.listAll === 'function' ? await withAll.listAll() : await provider.list()
+      } catch {
+        rows = []
+      }
+      for (const entry of rows) {
+        if (seen.has(entry.id)) continue
+        seen.add(entry.id)
+        entries.push(entry)
+      }
+    }
+    return entries
+  }
+
   async resolve(ref: string): Promise<AgentEntry[]> {
     const normalized = normalizeRef(ref)
     if (normalized === '') return []

@@ -79,6 +79,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test \"tests/*.test.mjs\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepare": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs"
   }
 }

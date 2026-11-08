@@ -320,6 +320,48 @@ Not in any shared host database — a project's messages stay in that project.
 | `dsh_bus_reply` | answer a message (`kind=response` + `replyTo`; recipient taken from the original) |
 | `dsh_bus_register` | **name yourself**: `{ name: "pipeline" }`, then others can `to: "pipeline"` |
 
+## Troubleshooting: the sidebar switch is missing
+
+The project switch lives in a Session row's "..." menu. It is a client-half UI entry,
+so a missing row is never a server/transport problem. Four independent layers had to
+be right; each one failed silently, which makes this section worth keeping.
+
+Check them in this order — all four are now fixed, and there are tests for each of the
+manifest/route assumptions:
+
+| # | symptom | cause | fix |
+|---|---|---|---|
+| 1 | no client code runs at all | `package.json` had no `exports["./client"]`; `dsh-client-modules` cannot locate a client bundle without it | declare `"."`, `"./client"`, `"./package.json"` in `exports` |
+| 2 | bundle loads but registers nothing | `apply(ctx)` used the **host-side** contract `ctx.inject(['slots'], cb)`. The client runner puts services directly on `ctx` | use `ctx.slots` / `ctx.layout` |
+| 3 | row shows "状态未知" in one session, vanishes in another | component consumed host-injected `useSessions` / `useMenuOpenState` / `MenuItemButton` props; a host hook outside a React render throws `Invalid hook call`, swallowed by `reportEntryError` | client reads **no** host props: host route `/whoami?session=<id>` resolves `projectRoot` + switch state; component uses only React's own hooks + a native `<button>` |
+| 4 | still intermittent | `slots.register` chain (`guardedSlots` → `env.claim` → `reportEntryError`) drops entries at runtime with no visible error | primary path is a **ctx-free DOM fallback**: capture `sessionId` from `data-row-key="session:<id>"` on `pointerdown`, then a `MutationObserver` inserts a native menu row when `[role="menu"]` appears. Same route as other working session-menu rows. `slots.register` remains as a secondary path |
+
+Two traps that are easy to miss:
+
+- **Do not declare a service in the factory's `inject` unless it exists on the
+  client.** An unavailable service can park the whole package before `apply` runs.
+  This package declares only `['slots']`.
+- **Do not rely on the installer's "client 跳过（无 client 声明）" line.** It reads
+  like an expected skip; it actually means the loader failed to find the client
+  bundle. Every UI-capable plugin in the profile has `exports["./client"]`.
+
+Quick diagnosis:
+
+```bash
+# 1. manifest shape
+grep -n '"./client"' package.json
+
+# 2. is the client bundle actually served?
+curl -s http://127.0.0.1:<port>/plugins/??dsh-session-send/client.js | head -5
+
+# 3. does the host know the session's project?
+curl -s "http://127.0.0.1:<port>/plugins/dsh-session-send/whoami?session=<session-id>"
+```
+
+If (3) returns `projectRoot` and `project.enabled`, the menu row has everything it
+needs. The desktop app is Electron running this same web surface, so there is no
+separate native menu path to configure.
+
 ## Install
 
 ```bash

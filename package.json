@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-send",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DSH 会话总线：让同一项目内的独立会话按 session id 或自注册名互相发消息并唤醒对方，无需人工复制提示词。默认关闭，仅在存在 .dsh-bus.json 且 enabled=true 的项目内生效。",
   "type": "module",
   "main": "lib/index.js",

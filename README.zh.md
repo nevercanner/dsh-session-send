@@ -463,6 +463,42 @@ adapter 的三种模式（自动降级，差异全在 adapter 内）：
 
 ---
 
+## 排障：侧栏菜单里没有「会话总线」开关
+
+项目开关挂在 **Session 行的「...」菜单**里，属于 Client 半的 UI 入口。
+这一行不出现，永远不是服务端/transport 的问题。前后共四层，每层都静默失败过，
+所以把排查顺序留在这里（每层现在都已修好，并有对应测试）：
+
+| # | 症状 | 原因 | 修法 |
+|---|---|---|---|
+| 1 | 客户端代码完全没跑 | `package.json` 缺 `exports["./client"]`，`dsh-client-modules` 找不到 bundle | 在 `exports` 声明 `"."` / `"./client"` / `"./package.json"` |
+| 2 | bundle 加载了但一个 slot 都没注册 | `apply(ctx)` 用了**宿主侧**写法 `ctx.inject(['slots'], cb)`；客户端 runner 直接把服务挂在 `ctx` 上 | 直接用 `ctx.slots` / `ctx.layout` |
+| 3 | 有的会话显示「状态未知」，有的整行消失 | 组件读了宿主注入的 `useSessions` / `useMenuOpenState` / `MenuItemButton`；宿主 hook 在非 React 渲染路径下抛 `Invalid hook call`，被 `reportEntryError` 吞掉 | 组件**不读任何宿主 props**：host 新增 `/whoami?session=<id>` 解析项目根与开关；只用 React 自身 hooks + 原生 button |
+| 4 | 仍然时有时无 | `slots.register` 链（`guardedSlots → env.claim → reportEntryError`）在运行时丢条目，无任何报错 | 主路径改为**不碰 ctx 的 DOM 兜底**：从 `data-row-key="session:<id>"` 取会话 id，`MutationObserver` 在 `[role="menu"]` 出现时插入原生菜单行（与其它可用菜单项同源）；`slots.register` 保留为次要路径 |
+
+两个容易忽略的坑：
+
+- **factory 的 `inject` 不要声明客户端不存在的服务**，否则整个包会在
+  `apply` 之前被 park。本插件只声明 `['slots']`。
+- **别信安装器那句「client 跳过（无 client 声明）」**，读起来像正常跳过，
+  实际是加载器找不到客户端入口。profile 里所有带 UI 的插件都有 `exports["./client"]`。
+
+快速诊断：
+
+```bash
+# 1. 清单形状
+grep -n '"./client"' package.json
+
+# 2. bundle 是否真的被服务端提供
+curl -s http://127.0.0.1:<port>/plugins/??dsh-session-send/client.js | head -5
+
+# 3. host 能否解析该会话的项目
+curl -s "http://127.0.0.1:<port>/plugins/dsh-session-send/whoami?session=<session-id>"
+```
+
+第 3 步返回 `projectRoot` 和 `project.enabled`，菜单行就具备全部所需信息。
+桌面端是 Electron 跑同一套 web 页面，没有另一条原生菜单路径要单独配置。
+
 ## 安装
 
 ```bash

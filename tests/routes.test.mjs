@@ -54,10 +54,13 @@ const ALL_PATHS = [
   '/plugins/dsh-session-send/messages',
   '/plugins/dsh-session-send/send',
   '/plugins/dsh-session-send/read',
+  // 客户端菜单项不再依赖浏览器侧 props，改由 host 侧按 sessionId 解析项目：
+  // /whoami 返回 { projectRoot, project }，是「会话总线：开启/关闭」的数据来源。
+  '/plugins/dsh-session-send/whoami',
   '/plugins/dsh-session-send/project',
 ]
 
-test('干净环境：六条路由全部注册', () => {
+test('干净环境：全部路由都注册', () => {
   const ws = makeWebServer()
   const warnings = []
   const routes = registerBusRoutes({
@@ -70,7 +73,7 @@ test('干净环境：六条路由全部注册', () => {
   assert.deepEqual([...ws.table.keys()].sort(), [...ALL_PATHS].sort())
 })
 
-test('上一代残留 5 条：只跳过它们，新的 /project 仍必须挂上', () => {
+test('上一代残留（除 /whoami 与 /project 外）：只跳过它们，新路由仍必须挂上', () => {
   const legacy = ALL_PATHS.slice(0, 5)
   const ws = makeWebServer(legacy)
   const warnings = []
@@ -81,9 +84,10 @@ test('上一代残留 5 条：只跳过它们，新的 /project 仍必须挂上'
     logger: { warn: (m) => warnings.push(m) },
   })
 
-  // 六条都「登记」了（失败的返回空 dispose，但不再中断）
+  // 全部都「登记」了（失败的返回空 dispose，但不再中断）
   assert.equal(routes.length, ALL_PATHS.length, '注册循环不许中断')
-  // /project 真的进了宿主表
+  // 新增的 /whoami 与 /project 真的进了宿主表
+  assert.ok(ws.table.has('/plugins/dsh-session-send/whoami'), '/whoami 必须被挂上')
   assert.ok(ws.table.has('/plugins/dsh-session-send/project'), '/project 必须被挂上')
   // 五条重复的都被记录成警告，便于排查
   assert.equal(warnings.filter((line) => line.includes('duplicate')).length, 5)

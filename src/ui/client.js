@@ -142,40 +142,6 @@ window.__ModuleLoader__.load({
     // Session 行「...」菜单里的一行：项目开关
     // ─────────────────────────────────────────────────────────────
 
-    /**
-     * 从宿主给出的会话上下文里解析「这个会话属于哪个项目」。
-     *
-     * 宿主 useSessions() 给出 SessionSnapshot；这里做防御式读取：
-     * 不同版本字段名可能是 workspacePath / cwd / workingDirectory，全部试一遍，
-     * 拿不到就返回 undefined（菜单行会自己退化为「不可用」而不是乱猜路径）。
-     */
-    function resolveSessionProject(snapshot, sessionId) {
-      try {
-        if (!snapshot || sessionId === undefined) return undefined
-        const sessions = snapshot.sessions ?? snapshot.byId ?? snapshot
-        const direct =
-          (typeof sessions?.get === 'function' ? sessions.get(sessionId) : undefined) ?? sessions?.[sessionId]
-        const row = direct ?? undefined
-        const record = row?.session ?? row
-        const candidates = [
-          record?.workspacePath,
-          record?.workspace?.path,
-          record?.cwd,
-          record?.workingDirectory,
-          record?.header?.cwd,
-          row?.workspacePath,
-          row?.workspace?.path,
-          row?.cwd,
-        ]
-        for (const value of candidates) {
-          if (typeof value === 'string' && value.trim() !== '') return value.trim()
-        }
-        return undefined
-      } catch {
-        return undefined
-      }
-    }
-
     /** 菜单行显示文案：动作 + 项目名 + 当前状态。 */
     function menuLabel(state, projectName, busy) {
       if (busy) return '会话总线：切换中…'
@@ -188,42 +154,40 @@ window.__ModuleLoader__.load({
     /**
      * 菜单行组件。
      *
-     * 只负责：读状态 → 点一下翻转 → 把结果反映到文案。
-     * 真正的写盘与热装配在 host 半（control.ts），这里绝不直接写文件。
+     * ── 为什么不再读 useSessions / MenuItemButton ──────────────────
+     * 真实事故：同一个菜单项在有些会话里渲染、有些会话里完全消失，
+     * 而且是静默的（没报错）。根因是宿主给 slot 注入的 props 不稳定：
+     * 有的会话带 useSessions，有的不带；组件里的 `useMenuOpenState()`
+     * 这种「宿主 hook」在非 React 渲染路径下会抛 Invalid hook call，
+     * 被 slot 的 reportEntryError 吞掉，整行就不显示了。
+     *
+     * 现在一律不碰宿主注入的东西：
+     *   · 项目根：调 host 的 /whoami?session=<id>，由 host 侧查会话目录
+     *   · 状态/切换：/project 路由
+     *   · 渲染：只用 React 自身的 useState/useEffect + 原生 button
+     * 这样它就是一个普通 React 组件，与宿主 props 完全解耦。
      */
     function ProjectToggleMenuItem(props) {
-      const sessionId = props?.sessionId
-      const displayTitle = props?.displayTitle
-      const useSessions = props?.useSessions
-      const useMenuOpenState = props?.useMenuOpenState
-      const MenuItemButton = props?.MenuItemButton
-
-      // 宿主给的会话快照（只要它存在，就能定位项目根）
-      let snapshot
-      try {
-        snapshot = typeof useSessions === 'function' ? useSessions() : undefined
-      } catch {
-        snapshot = undefined
-      }
-      const projectRoot = resolveSessionProject(snapshot, sessionId)
+      const sessionId = typeof props?.sessionId === 'string' ? props.sessionId : ''
 
       const [state, setState] = React.useState(undefined)
+      const [projectRoot, setProjectRoot] = React.useState(undefined)
       const [error, setError] = React.useState('')
       const [busy, setBusy] = React.useState(false)
-      const [, setMenuOpen] = typeof useMenuOpenState === 'function' ? useMenuOpenState() : [undefined, () => {}]
 
-      // 打开菜单时读一次状态（不轮询：菜单是短暂出现的）
+      // 打开菜单时读一次 whoami（不轮询：菜单是短暂出现的）
       React.useEffect(() => {
         let alive = true
-        if (projectRoot === undefined) {
+        if (sessionId === '') {
           setState(undefined)
-          return () => {
-            alive = false
-          }
+          setProjectRoot(undefined)
+          return () => { alive = false }
         }
-        api(`/project?project=${encodeURIComponent(projectRoot)}`)
+        api(`/whoami?session=${encodeURIComponent(sessionId)}`)
           .then((body) => {
-            if (alive) setState(body?.project ?? null)
+            if (!alive) return
+            setProjectRoot(typeof body?.projectRoot === 'string' ? body.projectRoot : undefined)
+            setState(body?.project ?? null)
           })
           .catch((caught) => {
             if (alive) {
@@ -231,10 +195,8 @@ window.__ModuleLoader__.load({
               setError(caught?.message ?? String(caught))
             }
           })
-        return () => {
-          alive = false
-        }
-      }, [projectRoot])
+        return () => { alive = false }
+      }, [sessionId])
 
       async function toggle() {
         if (projectRoot === undefined || busy) return
@@ -247,12 +209,6 @@ window.__ModuleLoader__.load({
           })
           setState(body?.project ?? null)
           setError('')
-          // 点完就收起菜单：状态已体现在文案与侧栏图标上
-          try {
-            setMenuOpen(false)
-          } catch {
-            /* 宿主没给 useMenuOpenState 时忽略 */
-          }
         } catch (caught) {
           setError(`${caught?.code ? `[${caught.code}] ` : ''}${caught?.message ?? String(caught)}`)
         } finally {
@@ -271,15 +227,6 @@ window.__ModuleLoader__.load({
           menuLabel(state, projectName, busy)),
       ]
 
-      // 有宿主 MenuItemButton 就用它（继承宿主菜单样式与 separatorBefore）；
-      // 没有就退化为普通 button，功能不受影响。
-      if (typeof MenuItemButton === 'function') {
-        return h(
-          MenuItemButton,
-          { separatorBefore: true, disabled, title, onSelect: () => void toggle() },
-          ...children,
-        )
-      }
       return h(
         'button',
         {
@@ -613,11 +560,17 @@ window.__ModuleLoader__.load({
         if (slots !== undefined && typeof slots.inject === 'function' && typeof slots.register === 'function') {
 
           // ① Session 行「...」菜单里的项目开关（本插件的主要入口）。
-          //    ui-primitives 的 MenuItemButton 与 slot 级 useMenuOpenState 由宿主注入，
-          //    拿不到就退化为普通按钮（见 ProjectToggleMenuItem）。
+          //    宿主给这个 slot 的每个菜单项都带 inject 字段（见 ui-workspace
+          //    的 pin/rename/fork 注册），带上它才能进入组合 props 链。
+          //    slot 注入的 props 我们一个都不用 —— 项目根走 host 的 /whoami。
           slots.inject('sidebar.workspaces.session.menu.item', () =>
             slots.register(
-              { name: 'sidebar.workspaces.session.menu.item', id: NS, order: 500 },
+              {
+                name: 'sidebar.workspaces.session.menu.item',
+                id: NS,
+                order: 500,
+                inject: () => ({}),
+              },
               (props) => h(ProjectToggleMenuItem, props),
             ),
           )

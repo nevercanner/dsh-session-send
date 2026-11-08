@@ -256,6 +256,46 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
   })
 
   // ── 项目开关：状态读取 ──
+  //
+  // 新增 `/whoami`：只带 sessionId，host 侧自己查项目根与开关状态。
+  // 为什么需要它：客户端 slot 组件拿到的宿主注入 props 不稳定（同一个菜单项
+  // 在不同会话里有时渲染、有时不渲染），不能把「解析项目根」这种关键逻辑
+  // 放在浏览器侧。host 有 sessionQuery / agents，是唯一可靠的位置。
+  add('/plugins/dsh-session-send/whoami', async (req, res) => {
+    if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'GET only' } })
+    const url = new URL(String(req.url ?? '/'), 'http://x')
+    const sessionId = String(url.searchParams.get('session') ?? '').trim()
+    if (sessionId === '') throw new BusError('E_TARGET_NOT_FOUND', '缺少 session 参数')
+
+    const sessionQuery = resolveService<any>(ctx, 'sessionQuery')
+    const agents = resolveService<any>(ctx, 'agents')
+    let cwd: string | undefined
+
+    // ① 活 Agent 直接拿 cwd
+    try {
+      const live = agents?.get?.(sessionId)
+      const value = live?.session?.header?.cwd
+      if (typeof value === 'string' && value.trim() !== '') cwd = value
+    } catch { /* 继续 */ }
+
+    // ② 磁盘记录（未激活的会话）
+    if (cwd === undefined && typeof sessionQuery?.listSessions === 'function') {
+      try {
+        const all = await sessionQuery.listSessions()
+        const rec = all.find((item: any) => String((item?.header ?? item)?.id ?? '') === sessionId)
+        const value = (rec?.header ?? rec)?.cwd
+        if (typeof value === 'string' && value.trim() !== '') cwd = value
+      } catch { /* 继续 */ }
+    }
+
+    if (cwd === undefined) {
+      sendJson(res, 200, { sessionId, projectRoot: undefined, project: undefined, reason: '找不到该会话的项目目录' })
+      return
+    }
+    const state = await control.status(cwd)
+    sendJson(res, 200, { sessionId, projectRoot: cwd, project: state })
+  })
+
   add('/plugins/dsh-session-send/project', async (req, res) => {
     if (req.method === 'GET') {
       const url = new URL(String(req.url ?? '/'), 'http://x')

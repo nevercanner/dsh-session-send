@@ -547,22 +547,144 @@ window.__ModuleLoader__.load({
       )
     }
 
-    // 客户端侧的契约与宿主侧不同：宿主用 ctx.inject(['slots'], cb) 等待服务，
-    // 客户端 runner 直接把已注入的服务挂在 ctx 上（见 dsh-cordis-client-runner
-    // 的示例：inject: ['slots'], apply(ctx) { ctx.slots.inject(...) }）。
-    // 早先这里套了宿主侧的 ctx.inject 写法，客户端上不成立 —— 整段注册从未执行，
-    // 界面上少一个菜单项，且没有任何报错。
+    // ── DOM 兜底：不依赖 slot 服务的菜单注入 ────────────────────────
+    //
+    // 宿主 ui-workspace 给每个 session 行打 `data-row-key="session:<id>"`，
+    // 菜单是 `[role="menu"]` 的浮层。做法：
+    //   · 捕获阶段记录最近一次点开的 session id（从行 DOM 上读）
+    //   · MutationObserver 观察菜单出现，若里面没有我们的行就插一个原生行
+    //   · 行内按钮点击 → /whoami 拿项目 → /project POST 翻转 → 刷新文案
+    //
+    // 与 codex-ui 的「分叉会话」是同一条路径，已在目标机器上稳定生效。
+    // 不碰 ctx.slots / register / 任何宿主 hook，因此不会被 park 或吞错。
+    function installDomFallback() {
+      if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
+      const ATTR = 'data-dsh-bus-menu-item'
+      let lastSessionId = ''
+
+      // 记录最近点开的会话：优先读行上的 data-row-key，
+      // 再退到菜单锚点向上找带该属性的祖先。
+      function findSessionId(node) {
+        let cur = node
+        for (let i = 0; i < 8 && cur; i += 1, cur = cur.parentElement) {
+          const key = cur?.getAttribute?.('data-row-key')
+          if (typeof key === 'string' && key.startsWith('session:')) return key.slice(8)
+        }
+        return ''
+      }
+
+      document.addEventListener('pointerdown', (event) => {
+        const id = findSessionId(event.target)
+        if (id !== '') lastSessionId = id
+      }, true)
+
+      async function refresh(button, sessionId) {
+        const label = button.querySelector('[data-dsh-bus-label]')
+        const setText = (t) => { if (label) label.textContent = t }
+        if (sessionId === '') { setText('会话总线：无法确定会话'); return }
+        try {
+          const body = await api(`/whoami?session=${encodeURIComponent(sessionId)}`)
+          if (!body?.projectRoot) { setText('会话总线：无法定位项目'); return }
+          const name = body.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? '本项目'
+          const enabled = body.project?.enabled === true
+          setText(`会话总线：${enabled ? '关闭' : '开启'}「${name}」`)
+          button.dataset.project = body.projectRoot
+          button.dataset.enabled = enabled ? '1' : '0'
+        } catch (e) {
+          setText(`会话总线：${e?.message ?? '状态未知'}`)
+        }
+      }
+
+      function buildRow(menu, sessionId) {
+        // 有干净 slot 行就不重复插
+        if (menu.querySelector(`[${ATTR}]`) !== null) return
+        const reference = menu.querySelector('button[role="menuitem"]')
+        if (reference === null) return
+
+        const wrap = document.createElement('div')
+        wrap.setAttribute(ATTR, '1')
+        wrap.setAttribute('role', 'menuitem')
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.setAttribute('role', 'menuitem')
+        Object.assign(button.style, {
+          display: 'flex', alignItems: 'center', gap: '8px', width: '100%',
+          padding: '6px 10px', border: 0, background: 'transparent',
+          color: 'inherit', font: 'inherit', textAlign: 'left', cursor: 'pointer',
+        })
+        const dot = document.createElement('span')
+        Object.assign(dot.style, { width: '7px', height: '7px', borderRadius: '50%', background: '#888', flex: 'none' })
+        const label = document.createElement('span')
+        label.setAttribute('data-dsh-bus-label', '1')
+        label.textContent = '会话总线：读取中…'
+        button.append(dot, label)
+
+        button.addEventListener('click', async (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          const project = button.dataset.project
+          if (!project) { label.textContent = '会话总线：无法定位项目'; return }
+          label.textContent = '会话总线：切换中…'
+          try {
+            const body = await api('/project', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ project }),
+            })
+            const enabled = body?.project?.enabled === true
+            label.textContent = `会话总线：${enabled ? '关闭' : '开启'}「${project.split(/[\\/]/).filter(Boolean).pop() ?? '本项目'}」`
+            dot.style.background = enabled ? '#3c9' : '#888'
+            button.dataset.enabled = enabled ? '1' : '0'
+          } catch (e) {
+            label.textContent = `会话总线：${e?.message ?? '切换失败'}`
+          }
+        })
+
+        wrap.appendChild(button)
+        // 插到最后一个菜单项之后（同一容器），与宿主行共用表面
+        const container = reference.parentElement?.parentElement ?? menu
+        container.appendChild(wrap)
+        void refresh(button, sessionId)
+      }
+
+      const observer = new MutationObserver(() => {
+        const menus = Array.from(document.querySelectorAll('[role="menu"]'))
+        for (const menu of menus) {
+          if (menu.querySelector('button[role="menuitem"]') === null) continue
+          buildRow(menu, lastSessionId)
+        }
+      })
+      observer.observe(document.body, { childList: true, subtree: true })
+
+      // 菜单可能在 observer 装好之前就已存在，补一次
+      try {
+        for (const menu of document.querySelectorAll('[role="menu"]')) buildRow(menu, lastSessionId)
+      } catch { /* 忽略 */ }
+
+      return () => observer.disconnect()
+    }
+
+    // 注入声明只保留 slots 一个（宿主菜单 slot 用它，一定存在）。
+    // 早先还声明了 layout，但如果客户端没有这个服务名，runner 会把整个
+    // package park 掉 —— apply 根本不跑，菜单项永远不出现。
     return {
-      inject: ['slots', 'layout'],
+      inject: ['slots'],
       apply(ctx) {
         let selectPanel = () => {}
+
+        // ── ① DOM 兜底（主路径，与「分叉会话」同源）──
+        //
+        // 为什么不再只靠 slots.register：那条链路经过 guardedSlots →
+        // env.claim → reportEntryError，任何一环抛错都会被静默吞掉，
+        // 表现为「同一份代码，有的会话显示、有的会话整行消失」。
+        // 这里改成纯浏览器 API：捕获点击记录 sessionId，菜单出现时若
+        // 没有我们的行就直接插一个原生菜单行。不碰 ctx，不可能被 park。
+        installDomFallback()
+
         const slots = ctx.slots
         if (slots !== undefined && typeof slots.inject === 'function' && typeof slots.register === 'function') {
 
-          // ① Session 行「...」菜单里的项目开关（本插件的主要入口）。
-          //    宿主给这个 slot 的每个菜单项都带 inject 字段（见 ui-workspace
-          //    的 pin/rename/fork 注册），带上它才能进入组合 props 链。
-          //    slot 注入的 props 我们一个都不用 —— 项目根走 host 的 /whoami。
+          // ② 干净的 slot 注册（可用就用；DOM 兜底会先检查避免重复）。
           slots.inject('sidebar.workspaces.session.menu.item', () =>
             slots.register(
               {

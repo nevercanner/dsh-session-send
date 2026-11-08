@@ -33,6 +33,7 @@ import { createTransport } from './transport/index.ts'
 import { SessionPusher } from './transport/session-push.ts'
 import { createRegistry, discoverProjectRoots } from './registry/index.ts'
 import { createRouter } from './router/index.ts'
+import { ReplyGuard } from './router/reply-guard.ts'
 import { BusService, type BusRuntime } from './api/service.ts'
 import { registerBusRoutes } from './api/routes.ts'
 import { registerBusTools } from './api/tools.ts'
@@ -324,6 +325,84 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
       logger.warn(`[dsh-session-send] 注册 /dsh-bus 命令失败：${String(error)}`)
     }
   })
+
+  // ── 5b. 回传守卫：让「收到消息不回」在机制上跑不掉 ──
+  //
+  // 不靠提示词提醒模型记得回，而是在轮次边界主动介入：
+  //   ① agent/inbox/claimed —— 一条 bus 消息被取走时记下欠账
+  //   ② tools/result        —— 调了 dsh_bus_send/reply 就销账
+  //   ③ agent/turn-stopping —— 还欠着就把催办注入它的收件箱并唤醒
+  //
+  // 详见 src/router/reply-guard.ts 的说明（含为什么是「催」而不是「代回」）。
+  const replyGuard = new ReplyGuard({ logger })
+  try {
+    const onClaimed = (payload: any) => {
+      const agent = payload?.agent
+      const message = payload?.message
+      if (agent === undefined || message === undefined) return
+      // bus 消息带 source.origin 标记；只处理自己的，不碰人机对话
+      const origin = message?.source?.origin
+      if (typeof origin === 'string' && origin !== 'dsh-session-send' && origin !== 'openclaw-dsh-bus') {
+        return
+      }
+      replyGuard.onMessageClaimed(String(agent.id ?? ''), {
+        id: String(message.id ?? ''),
+        fromId: message?.source?.from ?? undefined,
+        fromName: message?.source?.fromName ?? message?.source?.from ?? undefined,
+        toId: String(agent.id ?? ''),
+      })
+    }
+    ctx.on?.('agent/inbox/claimed', onClaimed)
+
+    const onToolResult = (exec: any, result: any) => {
+      void result
+      const name = String(exec?.toolName ?? exec?.name ?? '')
+      const agentId = String(exec?.agent?.id ?? exec?.session?.id ?? '')
+      if (name === '' || agentId === '') return
+      replyGuard.onToolResult(agentId, name, exec?.args ?? exec?.input)
+    }
+    ctx.on?.('tools/result', onToolResult)
+
+    const onTurnStopping = async (payload: any) => {
+      const agent = payload?.agent
+      if (agent === undefined) return
+      const sessionId = String(agent.id ?? '')
+      if (sessionId === '') return
+      const due = replyGuard.onTurnStopping(sessionId)
+      if (due.length === 0) return
+      // 把催办推进它自己的收件箱（不打断当前轮，下一轮它会看到）
+      for (const debt of due) {
+        const text = replyGuard.nudgeText(debt)
+        try {
+          const { createUserMessage } = await import('../host-modules.ts').then((m) =>
+            m.importHostPackage('@deepseek-ai/dsh-llm'),
+          )
+          const message =
+            typeof createUserMessage === 'function'
+              ? createUserMessage({
+                  content: [{ type: 'text', text }],
+                  source: { kind: 'user', origin: 'dsh-session-send', from: 'dsh-bus', target: sessionId },
+                })
+              : {
+                  id: `bus-nudge-${Date.now()}`,
+                  role: 'user',
+                  content: [{ type: 'text', text }],
+                  source: { kind: 'user', origin: 'dsh-session-send', from: 'dsh-bus' },
+                }
+          if (typeof agent.followup === 'function') agent.followup(message)
+          else agent.send?.(message, 'next-turn', true)
+          logger.info?.(`[dsh-session-send] 已催办 ${sessionId}：回复 ${debt.replyToName}`)
+        } catch (error) {
+          logger.warn?.(`[dsh-session-send] 催办 ${sessionId} 失败：${String(error)}`)
+        }
+      }
+    }
+    ctx.on?.('agent/turn-stopping', onTurnStopping)
+
+    disposers.push(() => replyGuard.reset())
+  } catch (error) {
+    logger.warn?.(`[dsh-session-send] 注册回传守卫失败：${String(error)}`)
+  }
 
   // ── 6. 卸载时回收 ──
   ctx.effect?.(() => () => {

@@ -463,6 +463,22 @@ adapter 的三种模式（自动降级，差异全在 adapter 内）：
 
 ---
 
+## 安装
+
+```bash
+dsh plugin add https://github.com/nevercanner/dsh-session-send
+```
+
+**npm 12 默认禁用 git 依赖**（`allow-git=none`）。如果装的时候报 `EALLOWGIT`，
+传个参数或改一次配置：
+
+```bash
+npm config set allow-git all      # 或：dsh plugin add ... --allow-git=all
+```
+
+仓库会在安装时自己构建（`prepare` 跑 `scripts/build.mjs`），所以源码安装不需要
+预构建产物 —— 只要求 Node >= 22.18.0，而宿主本来就要求这个版本。
+
 ## 开发
 
 ```bash

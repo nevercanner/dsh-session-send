@@ -307,6 +307,22 @@ Not in any shared host database — a project's messages stay in that project.
 | `dsh_bus_reply` | answer a message (`kind=response` + `replyTo`; recipient taken from the original) |
 | `dsh_bus_register` | **name yourself**: `{ name: "pipeline" }`, then others can `to: "pipeline"` |
 
+## Install
+
+```bash
+dsh plugin add https://github.com/nevercanner/dsh-session-send
+```
+
+**npm 12 blocks git dependencies by default** (`allow-git=none`). If the install fails with
+`EALLOWGIT`, either pass the flag through or set it once:
+
+```bash
+npm config set allow-git all      # or: dsh plugin add ... --allow-git=all
+```
+
+The repository builds itself on install (`prepare` runs `scripts/build.mjs`), so a source install
+needs no prebuilt artifact — only Node >= 22.18.0, which is what the host already requires.
+
 ## Development
 
 ```bash

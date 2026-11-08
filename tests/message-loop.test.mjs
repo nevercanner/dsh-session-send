@@ -51,6 +51,25 @@ test('消息正文必须告诉接收方怎么回复（这是「只回 1 条」�
   assert.match(content, /管线维护/, '按名字回复时要知道发给谁')
 })
 
+test('抬头用显示名，不把 uuid 挤在最显眼的位置', () => {
+  const content = formatContent(message())
+  const firstLine = content.split('\n')[0]
+
+  assert.match(firstLine, /来自 管线维护/, '第一行就要看到是谁发来的')
+  assert.equal(firstLine.includes('msg-abc-123'), false, 'uuid 不该出现在抬头')
+  assert.equal(firstLine.includes('session-sender-0001'), false, 'id 也不该出现')
+
+  // 技术标识应该在末尾（工具参数需要），而不是抬头
+  const footerIndex = content.indexOf('message_id=msg-abc-123')
+  assert.ok(footerIndex > content.indexOf('第三章就绪'), 'message_id 应在正文之后')
+})
+
+test('回复类消息在抬头标出「回复」', () => {
+  const content = formatContent(message({ replyTo: 'msg-original-999' }))
+  assert.match(content.split('\n')[0], /回复/, '抬头应能看出这是一条回复')
+  assert.match(content, /reply_to=msg-original-999/, '技术标识在末尾仍保留')
+})
+
 test('回复指引明确说「只在自己对话里回答不算回复」', () => {
   const content = formatContent(message())
   assert.match(content, /只在你自己这一轮里回答不算回复/)
@@ -64,10 +83,9 @@ test('回复指引说「不需要回复就忽略」，不强迫回复', () => {
 
 test('原文与元数据仍然完整保留（指引只是追加，不替换）', () => {
   const content = formatContent(message())
-  assert.match(content, /\[dsh-bus text\]/)
-  assert.match(content, /from=管线维护/)
-  assert.match(content, /message_id=msg-abc-123/)
-  assert.match(content, /第三章就绪，请复核。/)
+  assert.match(content, /来自 管线维护/, '抬头有发送者名字')
+  assert.match(content, /第三章就绪，请复核。/, '原文完整')
+  assert.match(content, /message_id=msg-abc-123/, '技术标识保留在末尾')
 })
 
 test('有 replyTo 时头部带 reply_to', () => {

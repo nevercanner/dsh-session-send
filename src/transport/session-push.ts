@@ -80,13 +80,14 @@ export class SessionPusher {
    * @param sessionId 目标会话 id
    * @param text      正文（调用方负责已含 kind / from / replyTo 头）
    * @param mode      steer（默认）| followup | notify
-   * @param options   `resume: true`（默认）时，目标未激活会尝试冷启动它
+   * @param options   `resume: true`（默认）时，目标未激活会尝试冷启动它；
+   *                  `sender` 是真实发送者（写进消息 source，回传守卫靠它认债主）
    */
   async push(
     sessionId: string,
     text: string,
     mode: DeliveryMode = 'steer',
-    options: { resume?: boolean } = {},
+    options: { resume?: boolean; sender?: { id?: string; name?: string } } = {},
   ): Promise<SessionPushResult> {
     const target = String(sessionId ?? '').trim()
     if (target === '') throw new BusError('E_TARGET_NOT_FOUND', '缺少目标 session id')
@@ -119,7 +120,7 @@ export class SessionPusher {
       }
     }
 
-    const message = await this.buildMessage(text, target)
+    const message = await this.buildMessage(text, target, options.sender)
     try {
       const suffix = resumed ? '（已冷启动该会话）' : ''
       if (mode === 'notify') {
@@ -251,15 +252,25 @@ export class SessionPusher {
    *
    * 用宿主的 `createUserMessage`（它做 deepFreeze + 生成稳定 id），
    * 拿不到就退化为同形状的普通对象 —— 那条路径足够让 inbox 接受。
+   *
+   * `source` 里必须带上**真实发送者**（`fromId` / `fromName`）：
+   * 回传守卫靠它判断「这条消息是谁发的、欠谁一条回复」。
+   * 早先这里写死 `from: 'dsh-bus'`，导致守卫把所有消息的债主都认成
+   * `'dsh-bus'`，销账永远不命中 —— 于是连发送者自己也被催办。
    */
-  private async buildMessage(text: string, target: string): Promise<any> {
+  private async buildMessage(
+    text: string,
+    target: string,
+    sender?: { id?: string; name?: string },
+  ): Promise<any> {
     const content = [{ type: 'text', text }]
-    const source = {
+    const source: Record<string, unknown> = {
       kind: 'user',
       origin: 'dsh-session-send',
-      from: 'dsh-bus',
+      from: sender?.id ?? 'dsh-bus',
       target,
     }
+    if (sender?.name !== undefined && sender.name !== '') source['fromName'] = sender.name
     const factory = await this.resolveFactory()
     if (factory !== undefined) {
       try {

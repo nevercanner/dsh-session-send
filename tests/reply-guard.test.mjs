@@ -241,3 +241,50 @@ test('空 sessionId 调任何方法都不抛', () => {
     guard.onTurnStopping('')
   })
 })
+
+// ─────────────────────────────────────────────────────────────
+// 真实事故：催办发给了发送者自己
+// ─────────────────────────────────────────────────────────────
+
+test('债主必须是真实发送者，不能是占位串（真实事故回归）', () => {
+  // 事故：消息 source.from 写死成 'dsh-bus'，守卫把它当债主，
+  // 于是销账永远不命中 —— 连发送者自己都被催办。
+  // 现在 source.from 必须是真实发送者 id。
+  const guard = new ReplyGuard()
+  const REAL_SENDER = 'session-76c2376e-62aa-4a4e-9609-a28be23df880'
+
+  guard.onMessageClaimed(ME, {
+    id: 'm1',
+    fromId: REAL_SENDER,      // ← 真实 id，不是 'dsh-bus'
+    fromName: '管线维护',
+    toId: ME,
+  })
+
+  const debt = guard.pending(ME)[0]
+  assert.equal(debt.replyToId, REAL_SENDER, '债主是真实发送者')
+  assert.notEqual(debt.replyToId, 'dsh-bus', '绝不能是占位串')
+
+  // 接收方回给真实发送者 → 销账成功
+  guard.onToolResult(ME, 'dsh_bus_send', { to: REAL_SENDER })
+  assert.equal(guard.pending(ME).length, 0, '销账必须命中')
+})
+
+test('占位 from 值不会造成「谁都被催」', () => {
+  const guard = new ReplyGuard()
+  // 假设某条消息的 from 是占位串
+  guard.onMessageClaimed(ME, { id: 'm1', fromId: 'dsh-bus', toId: ME })
+  // 接收方回给 dsh-bus（占位）—— 这是错误行为，但也不该无限催
+  guard.onToolResult(ME, 'dsh_bus_send', { to: 'dsh-bus' })
+  assert.equal(guard.pending(ME).length, 0)
+})
+
+test('发送者自己不会被自己发出的消息催办', () => {
+  const guard = new ReplyGuard()
+  // 发送者发出消息（不是它收到的）→ 不该产生欠账
+  guard.onMessageClaimed(SENDER, {
+    id: 'm1',
+    fromId: SENDER,   // 自己发的
+    toId: 'someone-else',
+  })
+  assert.equal(guard.pending(SENDER).length, 0)
+})

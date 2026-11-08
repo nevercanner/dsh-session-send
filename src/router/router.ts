@@ -281,7 +281,10 @@ export class DefaultRouter implements Router {
     if (this.options.sessions !== undefined) {
       const mode = deliveryModeOf(request)
       try {
-        const pushed = await this.options.sessions.push(target.id, formatContent(message), mode)
+        const pushed = await this.options.sessions.push(target.id, formatContent(message), mode, {
+          // 真实发送者：回传守卫靠它判断「这条是谁发的、欠谁一条回复」
+          sender: { id: message.fromId, name: message.fromName },
+        })
         const mapped = mapOutcome(pushed.outcome)
         return { ...base, mode: mapped, detail: pushed.detail }
       } catch (error) {
@@ -345,38 +348,41 @@ function normalizePayload(value: BusPayload | string): BusPayload {
 /**
  * 把一条消息渲染成推给目标会话的正文。
  *
- * ── 为什么带「怎么回复」的说明 ────────────────────────────────────
- * 真实事故：消息成功送达、目标也真的处理了，但 5 个会话里 4 个把回答
- * **只写在自己的对话里**，没有调 `dsh_bus_send` 发回去。发送方看到的是
- * 「6 条消息只回来 1 条」，像是投递失败 —— 其实是接收方不知道要回。
+ * ── 抬头只给人看，所以只放名字 ──────────────────────────────────
+ * 早先抬头是 `from=<name> message_id=<uuid> reply_to=<uuid>` —— 一串 uuid
+ * 挤在最显眼的位置，读起来像日志而不是对话。现在：
+ *   · 第一行就是「谁发来的」，用显示名，不出现 id
+ *   · 技术标识（message_id / reply_to）挪到末尾的回复指引里，
+ *     那里才是需要它们的地方（工具参数）
  *
- * 所以正文末尾固定附一段回复指引：告诉它用哪个工具、`to` 填什么、
- * 以及「只在自己对话里说等于没回」。这段话很短，但决定消息闭环成不成立。
+ * ── 为什么末尾带「怎么回复」的说明 ────────────────────────────────
+ * 真实事故：消息成功送达、目标也真的处理了，但 5 个会话里 4 个把回答
+ * **只写在自己的对话里**，没有调 `dsh_bus_send` 发回去。
+ * 注：这只是兜底提示。真正的机制是 reply-guard.ts（轮次边界上主动催办），
+ * 不依赖模型读这段文字。
  */
 export function formatContent(message: BusMessage): string {
   const sender = message.fromName ?? message.fromId
-  const header = [
-    `[dsh-bus ${message.kind}]`,
-    `from=${sender}`,
-    `message_id=${message.id}`,
-    message.replyTo === undefined ? undefined : `reply_to=${message.replyTo}`,
-  ]
-    .filter((part): part is string => part !== undefined)
-    .join(' ')
+  // 抬头：谁发来的 + 什么类型。不放 uuid。
+  const isReply = message.replyTo !== undefined
+  const head = `📨 **来自 ${sender}** 的消息${isReply ? '（回复）' : ''}`
+  const kindLabel = message.kind === 'text' ? '' : ` · ${message.kind}`
+
   const data =
     message.payload.data === undefined ? '' : `\n\n<data>${JSON.stringify(message.payload.data)}</data>`
 
-  // 回复指引：用 replyTo 最省事（收件人自动取原发送方），也说明按名字回的写法。
-  const howToReply = [
+  // 技术标识与回复方式放末尾 —— 需要它们的是工具参数，不是阅读。
+  const footer = [
     '',
     '---',
-    `要回复这条，调用 dsh_bus_reply({ replyTo: "${message.id}", text: "..." })；`,
-    `或者 dsh_bus_send({ to: "${sender}", text: "..." })。`,
-    '**只在你自己这一轮里回答不算回复** —— 发送方看不到，必须走上面两个工具。',
-    '不需要回复就忽略本段。',
+    `回复：dsh_bus_reply({ replyTo: "${message.id}", text: "..." })`,
+    `或：  dsh_bus_send({ to: "${sender}", text: "..." })`,
+    `（只在你自己这一轮里回答不算回复 —— 发送方看不到）`,
+    `不需要回复就忽略本段。`,
+    `message_id=${message.id}${message.replyTo === undefined ? '' : ` reply_to=${message.replyTo}`}`,
   ].join('\n')
 
-  return `${header}\n\n${message.payload.text}${data}${howToReply}`
+  return `${head}${kindLabel}\n\n${message.payload.text}${data}${footer}`
 }
 
 function fromLabel(message: BusMessage): string {

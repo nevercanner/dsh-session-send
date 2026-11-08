@@ -247,6 +247,10 @@ export class BusService {
       return {
         enabled: false,
         owner,
+        // 带上「哪个项目没开」和「为什么」，否则调用方只能看到一个空列表，
+        // 会以为插件坏了 —— 真实困惑。
+        projectRoot: runtime.projectRoot,
+        disabledReason: this.disabledReasonOf(runtime) ?? '本项目未启用会话总线',
         agents: [],
         unread: [{ target: owner, count: 0 }],
         messages: [],

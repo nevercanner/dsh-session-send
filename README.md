@@ -271,6 +271,19 @@ Nested projects resolve to the **most specific** project root: `...\SOP\loop` si
 `D:\openclaw-data`, but once `loop` has its own `.dsh-bus.json` its sessions belong to `loop`,
 not to the outer project.
 
+### A brand-new project
+
+Nothing is hardcoded to any project — a project that has never used the bus simply starts empty.
+Two independent switches decide whether it works:
+
+1. `<workspace>/.dsh-bus.json` with `enabled: true` — created for you by the sidebar session menu.
+2. Each session registers itself: `dsh_bus_register({ name: "..." })`.
+
+Until both are true the project has no addressable sessions. That is intentional: it is what
+keeps unrelated sessions from being disturbed. And the empty state is never silent — calling
+`dsh_bus_agents` in an unenabled project answers with the project path and the reason, not a
+bare `0`.
+
 ## Four decoupled layers
 
 | layer | file | replaceable |

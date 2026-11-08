@@ -197,9 +197,31 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       render: (_args, value: any) => {
         const agents: any[] = Array.isArray(value?.agents) ? value.agents : []
         const sources: any[] = Array.isArray(value?.sources) ? value.sources : []
+
+        // 项目没开总线：说清为什么，而不是给一个看起来像「没人」的空列表。
+        // 真实困惑：用户在未启用的项目里调这个工具，看到 0 个，以为插件坏了。
+        if (value?.enabled === false) {
+          return text([
+            'dsh_bus_agents: 本项目未启用会话总线',
+            `  项目：${value?.projectRoot ?? '(未知)'}`,
+            `  原因：${value?.disabledReason ?? '未启用'}`,
+            '',
+            '  怎么开：在左侧栏该会话的「...」菜单里点「会话总线：开启」，',
+            '         它会写入配置文件并立即生效。',
+            '  开启后还需要每个会话自己报名：dsh_bus_register({ name: "..." })',
+          ].join('\n'))
+        }
+
         const head = sources.map((source) => `${source.source}:${source.available ? 'ok' : 'down'}(${source.count})`).join(' ')
         const lines = agents.map((agent) => `${agent.name} (${agent.id}) [${agent.source}/${agent.kind}] ${agent.status ?? ''}`)
-        return text([`dsh_bus_agents: ${agents.length} 个身份  ${head}`, ...lines].join('\n'))
+        const empty = agents.length === 0
+          ? [
+              '  （本项目还没有会话报名）',
+              '  让某个会话调用：dsh_bus_register({ name: "<名字>" })',
+              '  批量报名：dsh_bus_register({ selfName: "<你自己>", entries: { "<session id>": "<名字>" } })',
+            ]
+          : []
+        return text([`dsh_bus_agents: ${agents.length} 个身份  ${head}`, ...lines, ...empty].join('\n'))
       },
     },
     async execute(_args: unknown, exec: any) {
@@ -208,6 +230,9 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       // 归一成无损 JSON：AgentEntry 的 workspace/status/teamId/role 都可能 undefined，
       // 宿主会以 "value is not lossless JSON" 整单拒绝（真实事故）。
       return asToolResult({
+        enabled: snapshot.enabled,
+        projectRoot: snapshot.projectRoot,
+        disabledReason: snapshot.disabledReason,
         agents: snapshot.agents,
         sources: snapshot.sources,
         adapter: snapshot.adapter,

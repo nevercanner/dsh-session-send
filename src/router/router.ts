@@ -81,6 +81,10 @@ export interface Router {
 export interface BusSnapshot {
   enabled: boolean
   owner: string
+  /** 这次快照针对哪个项目（未启用时靠它告诉用户是哪个项目没开）。 */
+  projectRoot?: string
+  /** 未启用的原因（未启用时一定有值，便于直接展示给用户）。 */
+  disabledReason?: string
   agents: AgentEntry[]
   unread: Array<{ target: string; count: number }>
   messages: BusMessage[]
@@ -235,6 +239,7 @@ export class DefaultRouter implements Router {
     return {
       enabled: config.enabled,
       owner,
+      projectRoot: this.options.projectRoot,
       agents,
       unread,
       messages,

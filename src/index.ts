@@ -104,6 +104,21 @@ function resolveProjectRoot(ctx: any, config: PluginConfig): string {
   } catch {
     /* 落到下一个候选 */
   }
+  // 从 workspaceRegistry 里挑一个真实工作区。
+  // 绝不回退到 process.cwd()：宿主进程的 cwd 是 profile 目录
+  // （`~/.dsh/profiles/<name>`），把它当成项目根会让初始 runtime 挂在
+  // 一个没有 .dsh-bus.json 的地方 —— 用户看到的就是「未启用」，
+  // 而真正的工作区明明开着。
+  try {
+    const registry = resolveService<any>(ctx, 'workspaceRegistry')
+    const list: any[] = registry?.list?.() ?? []
+    for (const workspace of list) {
+      const path = workspace?.path
+      if (typeof path === 'string' && path.trim() !== '') return path
+    }
+  } catch {
+    /* 没有 workspaceRegistry */
+  }
   return process.cwd()
 }
 

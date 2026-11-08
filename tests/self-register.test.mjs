@@ -402,3 +402,72 @@ test('兜底名规则：就是 id 去 session- 后的最后 7 位（不是哈希
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+// ─────────────────────────────────────────────────────────────
+// 批量报名不包含调用者（真实事故）
+// ─────────────────────────────────────────────────────────────
+
+test('批量报名的语义：entries 只写列出的会话，调用者不会自动获得名字', async () => {
+  // 这是真实事故的根因：给 6 个 lane 批量报名，调用者自己从头到尾没进名册。
+  // 名册层如实反映这一点 —— 修复做在工具层（selfName + 警告）。
+  const dir = await mkdtemp(join(tmpdir(), 'names-'))
+  try {
+    const ctx = host({
+      persisted: [
+        rec('session-self', { cwd: dir }),
+        rec('session-cast', { cwd: dir }),
+        rec('session-gate', { cwd: dir }),
+      ],
+    })
+    const provider = new DshSessionsProvider({ ctx, projectRoot: dir })
+
+    // 只写别人，不写自己（模拟用户照着示例跑）
+    await writeName(dir, 'session-cast', 'cast')
+    await writeName(dir, 'session-gate', 'gate')
+
+    const names = await readNames(dir)
+    assert.equal('session-self' in names, false, '调用者确实不会被自动写入')
+
+    const entries = await provider.list()
+    const self = entries.find((e) => e.id === 'session-self')
+    assert.match(self.name, /·/, '调用者仍是兜底名')
+
+    // 补上 selfName 后才有名字
+    await writeName(dir, 'session-self', '管线维护')
+    const after = await provider.list()
+    assert.equal(after.find((e) => e.id === 'session-self').name, '管线维护')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('批量报名：写入后回读能得到全部条目（含调用者，当 selfName 给了）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'names-'))
+  try {
+    // 模拟工具层的行为：先 selfName，再 entries
+    await writeName(dir, 'session-self', '管线维护')
+    await writeName(dir, 'session-cast', 'cast')
+    await writeName(dir, 'session-gate', 'gate')
+
+    const names = await readNames(dir)
+    assert.deepEqual(
+      Object.keys(names).sort(),
+      ['session-cast', 'session-gate', 'session-self'],
+      '调用者与其它会话都应该在册',
+    )
+    assert.equal(names['session-self'].name, '管线维护')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('单条报名：写完回读能读到（persisted 校验）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'names-'))
+  try {
+    await writeName(dir, 'session-x', '测试名')
+    const verify = await readNames(dir)
+    assert.equal(verify['session-x']?.name, '测试名', '写完必须能读到')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

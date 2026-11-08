@@ -286,7 +286,15 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
         type: 'object',
         description:
           'Batch form: a map of { "<session id>": "<name>" }. Every key must belong to this project. ' +
-          'An empty-string name clears that entry.',
+          'An empty-string name clears that entry. ' +
+          'IMPORTANT: `entries` does not include the caller unless you list it explicitly — ' +
+          'use `selfName` to name yourself in the same call.',
+      },
+      selfName: {
+        type: 'string',
+        description:
+          'Name for the CALLING session, applied in the same call as `entries`. ' +
+          'Without this, a batch registration names the other sessions but leaves you unnamed.',
       },
     },
     output: {
@@ -294,15 +302,23 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       render: (_args, value: any) => {
         if (Array.isArray(value?.applied)) {
           const lines = value.applied.map((item: any) =>
-            item.cleared === true ? `  ${item.sessionId} → (已清除)` : `  ${item.name} → ${item.sessionId}`,
+            item.cleared === true
+              ? `  ${item.sessionId} → (已清除)`
+              : `  ${item.name} → ${item.sessionId}${item.self === true ? '  (你自己)' : ''}`,
           )
           const head = `dsh_bus_register: ${value.applied.length} 条（本项目名册共 ${value.total ?? '?'} 条）`
           const failed = Array.isArray(value.rejected) && value.rejected.length > 0
             ? ['被拒绝：', ...value.rejected.map((r: any) => `  ${r.sessionId}: ${r.reason}`)]
             : []
-          return text([head, ...lines, ...failed].join('\n'))
+          const warns = Array.isArray(value.warnings) && value.warnings.length > 0
+            ? ['⚠️ 注意：', ...value.warnings.map((w: string) => `  ${w}`)]
+            : []
+          return text([head, ...lines, ...failed, ...warns].join('\n'))
         }
         if (value?.cleared === true) return text(`dsh_bus_register: 已清除 ${value.sessionId} 的名字`)
+        if (value?.persisted === false) {
+          return text(`dsh_bus_register: ⚠️ 写入后回读不到 ${value.name} → ${value.sessionId}，写盘可能失败`)
+        }
         return text(`dsh_bus_register: ${value?.name ?? '?'} → ${value?.sessionId ?? '?'}（本项目名册已更新）`)
       },
     },
@@ -317,6 +333,23 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
         }
         const applied: Array<Record<string, unknown>> = []
         const rejected: Array<Record<string, unknown>> = []
+        const callerId = String(exec?.agent?.id ?? '')
+
+        // 先给调用者自己起名（如果给了 selfName）。
+        // 真实事故：用户照着示例只传了 6 个 lane 的 entries，结果 6 个都写进去了，
+        // 调用者自己从头到尾没进名册 —— 批量表单天然不含"我"。
+        const selfName = typeof args?.selfName === 'string' ? args.selfName.trim() : undefined
+        if (selfName !== undefined && selfName !== '' && callerId !== '') {
+          const names = await writeName(runtime.projectRoot, callerId, selfName)
+          applied.push({
+            sessionId: callerId,
+            name: selfName,
+            cleared: false,
+            self: true,
+            total: Object.keys(names).length,
+          })
+        }
+
         for (const [rawId, rawName] of Object.entries(args.entries as Record<string, unknown>)) {
           const sessionId = String(rawId ?? '').trim()
           const name = typeof rawName === 'string' ? rawName.trim() : ''
@@ -339,10 +372,22 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
           })
         }
         const finalNames = await readNames(runtime.projectRoot)
+        // 调用者自己有没有名字？没有就明确警告，别让它以为自己也登记了。
+        const callerNamed = callerId !== '' && finalNames[callerId] !== undefined
+        const warnings: string[] = []
+        if (callerId !== '' && !callerNamed) {
+          warnings.push(
+            `调用者 ${callerId} 自己还没有名字。entries 不会自动包含你自己 —— ` +
+              `补一次 dsh_bus_register({ name: "..." })，或在本次调用里传 selfName: "..."。`,
+          )
+        }
         return asToolResult({
           applied,
           rejected,
           total: Object.keys(finalNames).length,
+          callerId: callerId === '' ? undefined : callerId,
+          callerNamed,
+          warnings,
           projectRoot: runtime.projectRoot,
         })
       }
@@ -362,11 +407,15 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       }
 
       const names = await writeName(runtime.projectRoot, target, requested)
+      // 回读校验：写完必须能读到，否则说明写盘失败 —— 不能只看返回值就报告成功。
+      const verify = await readNames(runtime.projectRoot)
+      const persisted = requested === '' ? verify[target] === undefined : verify[target]?.name === requested
       return asToolResult({
         sessionId: target,
         name: requested === '' ? undefined : requested,
         cleared: requested === '',
-        total: Object.keys(names).length,
+        persisted,
+        total: Object.keys(verify).length,
         projectRoot: runtime.projectRoot,
       })
     },

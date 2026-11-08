@@ -217,13 +217,21 @@ dsh_bus_register({ name: "门禁" })
 
 ```js
 dsh_bus_register({
+  selfName: "管线维护",                                    // ← 同时给**自己**起名
   entries: {
-    "session-4c72b65e-da51-4a5f-999d-e9551e9f8dca": "管线维护",
-    "session-da38f11a-5982-4d2c-bc3d-c5381400cf88": "跑章选手",
-    "session-54288ce6-ac61-446b-95ef-de3d2fe6fcb7": "门禁"
+    "session-4c72b65e-da51-4a5f-999d-e9551e9f8dca": "cast",
+    "session-da38f11a-5982-4d2c-bc3d-c5381400cf88": "outline",
+    "session-54288ce6-ac61-446b-95ef-de3d2fe6fcb7": "gate"
   }
 })
 ```
+
+> **`entries` 不包含你自己。** 批量报名只给列表里那些会话起名，调用者本身不会自动获得名字 ——
+> 除非传 `selfName`（或把自己的 id 也写进 `entries`）。
+> 返回里会给出 `callerNamed`，调用后你仍然没有名字时会附带警告。
+>
+> 这是真实踩过的坑：一次批量报名写了 6 个 lane、忘了调用者自己，
+> 看着全部成功，但调用者在列表里始终是无名状态。
 
 返回 `applied`（成功）与 `rejected`（跨项目的 id 会被拒，附原因）。
 用空字符串作为名字即清除该条。

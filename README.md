@@ -150,15 +150,22 @@ Clear a registration with `dsh_bus_register({ name: "" })`.
 
 ```js
 dsh_bus_register({
+  selfName: "pipeline",                                  // ← name YOURSELF too
   entries: {
-    "session-4c72b65e-da51-4a5f-999d-e9551e9f8dca": "pipeline",
-    "session-da38f11a-5982-4d2c-bc3d-c5381400cf88": "runner",
+    "session-4c72b65e-da51-4a5f-999d-e9551e9f8dca": "cast",
+    "session-da38f11a-5982-4d2c-bc3d-c5381400cf88": "outline",
     "session-54288ce6-ac61-446b-95ef-de3d2fe6fcb7": "gate"
   }
 })
 ```
 
-Returns `applied` and `rejected` (ids from another project are rejected with a reason).
+> **`entries` does not include you.** A batch registration names the sessions you list and nothing else —
+> the calling session stays unnamed unless you pass `selfName` (or list your own id in `entries`).
+> The response reports `callerNamed` and a warning when you are still unnamed after the call.
+> This is a real trap: a batch call that names six lanes and forgets the caller looks successful
+> and leaves the caller invisible in the list.
+
+Returns `applied`, `rejected` (ids from another project are rejected with a reason), `callerNamed`, and `warnings`.
 
 **Display-name priority: registered name > config `labels` > host title > fallback label (`11-08 15:49 · e9f8dca`)**
 

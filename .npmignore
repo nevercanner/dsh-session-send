@@ -1,0 +1,20 @@
+# 测试与开发期文件不进 npm 包
+tests/
+tsconfig.json
+.gitignore
+.git/
+*.log
+coverage/
+.dsh-bus/
+.agent-teams/
+.dsh-bus.json
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 临时
+*.tmp
+.tmp/

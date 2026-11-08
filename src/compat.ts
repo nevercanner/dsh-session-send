@@ -94,7 +94,7 @@ export function assertHostCompatibility(
 ): void {
   if (!isNodeVersionSupported()) {
     throw new Error(
-      `openclaw-dsh-bus 需要 Node >= ${SUPPORTED_NODE_MIN.join('.')}（当前 ${process.versions.node}）：` +
+      `dsh-session-send 需要 Node >= ${SUPPORTED_NODE_MIN.join('.')}（当前 ${process.versions.node}）：` +
         `sqlite transport 依赖内置 node:sqlite。请升级 Node，或把 transport.kind 改为 "file"。`,
     )
   }
@@ -107,7 +107,7 @@ export function assertHostCompatibility(
     return
   }
   throw new Error(
-    `openclaw-dsh-bus 需要 DSH >= ${SUPPORTED_DSH_MIN}，当前 ${hostVersion}。` +
+    `dsh-session-send 需要 DSH >= ${SUPPORTED_DSH_MIN}，当前 ${hostVersion}。` +
       `请升级 DSH，或使用匹配的插件版本。`,
   )
 }

@@ -122,13 +122,13 @@ test('点一下开启：写文件 + 热生效，随后立刻能发消息（不�
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
     // ① 初始：关闭
-    const before = await call(host, '/plugins/openclaw-dsh-bus/status')
+    const before = await call(host, '/plugins/dsh-session-send/status')
     assert.equal(before.body.status.enabled, false)
     assert.equal(before.body.status.configPresent, false)
     assert.match(String(before.body.status.disabledReason), /不存在/)
 
     // ② 点开关（菜单那一行发的就是这个请求，省略 enabled = 翻转）
-    const toggled = await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir })
+    const toggled = await post(host, '/plugins/dsh-session-send/project', { project: dir })
     assert.equal(toggled.status, 200)
     assert.equal(toggled.body.project.enabled, true)
     assert.equal(toggled.body.status.enabled, true, 'service 必须已经热切换')
@@ -140,7 +140,7 @@ test('点一下开启：写文件 + 热生效，随后立刻能发消息（不�
     assert.equal(raw.scope, 'project')
 
     // ④ 不用重启：立刻能发消息
-    const sent = await post(host, '/plugins/openclaw-dsh-bus/send', {
+    const sent = await post(host, '/plugins/dsh-session-send/send', {
       from: 's-1',
       to: 'beta',
       payload: { text: 'just enabled' },
@@ -166,15 +166,15 @@ test('再点一下关闭：写盘 + 热生效，消息接口立刻回到 E_DISAB
     host.services.set('agents', { list: () => [{ id: 's-1', session: { header: { title: 'alpha' } } }] })
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
-    await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir })
-    const off = await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir })
+    await post(host, '/plugins/dsh-session-send/project', { project: dir })
+    const off = await post(host, '/plugins/dsh-session-send/project', { project: dir })
     assert.equal(off.body.project.enabled, false)
     assert.equal(off.body.status.enabled, false)
 
     const raw = JSON.parse(await readFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), 'utf8'))
     assert.equal(raw.enabled, false, '关掉是把 enabled 置 false，不是删文件')
 
-    const denied = await post(host, '/plugins/openclaw-dsh-bus/send', {
+    const denied = await post(host, '/plugins/dsh-session-send/send', {
       from: 's-1',
       to: 's-1',
       payload: { text: 'x' },
@@ -194,12 +194,12 @@ test('显式 enabled=true/false 也可用（幂等，不靠翻转）', async () 
     host = fakeHost()
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
-    const on = await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir, enabled: true })
+    const on = await post(host, '/plugins/dsh-session-send/project', { project: dir, enabled: true })
     assert.equal(on.body.project.enabled, true)
-    const stillOn = await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir, enabled: true })
+    const stillOn = await post(host, '/plugins/dsh-session-send/project', { project: dir, enabled: true })
     assert.equal(stillOn.body.project.enabled, true, '重复设 true 保持 true')
 
-    const off = await post(host, '/plugins/openclaw-dsh-bus/project', { project: dir, enabled: false })
+    const off = await post(host, '/plugins/dsh-session-send/project', { project: dir, enabled: false })
     assert.equal(off.body.project.enabled, false)
   } finally {
     host?.dispose?.()
@@ -215,7 +215,7 @@ test('GET /project：读状态，不创建配置文件', async () => {
     await apply(host.ctx, { projectRoot: dir, enabled: true })
     // 注意：初次 mount 会建 transport（sqlite 会建 .dsh-bus/ 目录与库文件），
     // 那是装配行为，与本用例要守的「读状态不写配置文件」无关。
-    const state = await call(host, `/plugins/openclaw-dsh-bus/project?project=${encodeURIComponent(dir)}`)
+    const state = await call(host, `/plugins/dsh-session-send/project?project=${encodeURIComponent(dir)}`)
     assert.equal(state.status, 200)
     assert.equal(state.body.project.enabled, false)
     assert.equal(state.body.project.present, false)
@@ -240,7 +240,7 @@ test('GET /project 读「另一个」项目：不在那边建任何东西（不�
   try {
     host = fakeHost()
     await apply(host.ctx, { projectRoot: home, enabled: true })
-    const state = await call(host, `/plugins/openclaw-dsh-bus/project?project=${encodeURIComponent(other)}`)
+    const state = await call(host, `/plugins/dsh-session-send/project?project=${encodeURIComponent(other)}`)
     assert.equal(state.status, 200)
     assert.equal(state.body.project.enabled, false)
 
@@ -260,20 +260,20 @@ test('项目根校验：不存在/非目录/空值都被拒（不让人乱改无
     host = fakeHost()
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
-    const missing = await post(host, '/plugins/openclaw-dsh-bus/project', {
+    const missing = await post(host, '/plugins/dsh-session-send/project', {
       project: join(dir, 'does-not-exist'),
     })
     assert.equal(missing.status, 404)
     assert.equal(missing.body.error.code, 'E_TARGET_NOT_FOUND')
 
-    const empty = await post(host, '/plugins/openclaw-dsh-bus/project', {})
+    const empty = await post(host, '/plugins/dsh-session-send/project', {})
     assert.equal(empty.status, 404)
     assert.equal(empty.body.error.code, 'E_TARGET_NOT_FOUND')
 
     const file = join(dir, 'a-file.txt')
     const { writeFile } = await import('node:fs/promises')
     await writeFile(file, 'x', 'utf8')
-    const notDir = await post(host, '/plugins/openclaw-dsh-bus/project', { project: file })
+    const notDir = await post(host, '/plugins/dsh-session-send/project', { project: file })
     assert.equal(notDir.status, 404)
     assert.match(String(notDir.body.error.message), /不是目录/)
   } finally {
@@ -290,7 +290,7 @@ test('切到「另一个」项目：为那个项目建配置，且不影响当�
     host = fakeHost()
     await apply(host.ctx, { projectRoot: home, enabled: true })
 
-    const state = await post(host, '/plugins/openclaw-dsh-bus/project', { project: other })
+    const state = await post(host, '/plugins/dsh-session-send/project', { project: other })
     assert.equal(state.body.project.projectRoot, other)
     assert.equal(state.body.project.enabled, true)
 

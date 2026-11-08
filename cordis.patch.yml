@@ -1,4 +1,4 @@
-# openclaw-dsh-bus bundle patch：把会话总线挂进 dsh profile 的组合。
+# dsh-session-send bundle patch：把会话总线挂进 dsh profile 的组合。
 #
 # 注意：这一层只把「插件」挂上，不等于打开总线。真正的业务开关是
 # **每个项目自己的** `<workspace>/.dsh-bus.json`（默认不存在 = 关闭）。
@@ -11,8 +11,8 @@
 # 「一次放开所有项目」，与「仅项目内生效」冲突。项目根由宿主
 # （当前会话的 workspace / cwd）决定。
 - insert:
-    - id: openclaw-dsh-bus
-      name: 'openclaw-dsh-bus'
+    - id: dsh-session-send
+      name: 'dsh-session-send'
       config:
         # 默认关闭：装配上但不做任何事，侧栏入口只显示「未开启」与如何开启。
         enabled: false

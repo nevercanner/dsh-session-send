@@ -1,6 +1,6 @@
 [English](./README.md) · **简体中文**
 
-# openclaw-dsh-bus
+# dsh-session-send
 
 DSH 会话总线：让**不同 DSH session / agent 之间可以互相发消息**。
 
@@ -111,7 +111,7 @@ afterPhase:  running       ← 投递后真的跑起来了
 **点一下就行。** 左侧栏任意 Session 行的「...」菜单里有一行：
 
 ```
-● 会话总线：开启「openclaw-dsh-bus」
+● 会话总线：开启「dsh-session-send」
 ```
 
 - 圆点表示当前状态：实心 = 该项目已开启，空心 = 关闭，灰色 = 状态未知
@@ -138,8 +138,8 @@ afterPhase:  running       ← 投递后真的跑起来了
 
 ```yaml
 - insert:
-    - id: openclaw-dsh-bus
-      name: 'openclaw-dsh-bus'
+    - id: dsh-session-send
+      name: 'dsh-session-send'
       config:
         enabled: true                      # ← 打开第一把锁
         projectConfigName: '.dsh-bus.json'
@@ -295,7 +295,7 @@ src/compat.ts             宿主版本 fail-fast
 - `transport` 不 import `registry` / `router` / `ui`，不读任何配置文件；
 - `router` 不 import `ui`，不读任何配置文件（配置由构造注入）；
 - **dsh-team 只出现在 `src/registry/dsh-team-adapter.ts` 一处**——只包装，不 fork、不复制、不改它；
-- `ui` 只通过 `/plugins/openclaw-dsh-bus/*` HTTP 面取数据，不直接读写文件；
+- `ui` 只通过 `/plugins/dsh-session-send/*` HTTP 面取数据，不直接读写文件；
 - **只有 `src/api/control.ts` 会写文件**，且只写 `<workspace>/.dsh-bus.json` 的 `enabled`。
 
 任意一层都可以独立替换：加一个 `Transport` / `RegistryProvider` 实现，改工厂里的一行。
@@ -318,14 +318,14 @@ adapter 的三种模式（自动降级，差异全在 adapter 内）：
 | `mailbox` | 能加载它的 `members.js`（有 `deliverToMember`/`steerCaptainReport`） | 写它的 inbox + 尽力唤醒 |
 | `fs-only` | 版本漂移、函数对不上、包没装 | 只写它的 inbox，保证消息不丢 |
 
-`adapter.mode` 会出现在 `/plugins/openclaw-dsh-bus/status` 与 `dsh_bus_agents` 的输出里，
+`adapter.mode` 会出现在 `/plugins/dsh-session-send/status` 与 `dsh_bus_agents` 的输出里，
 排查「为什么消息只落库没唤醒」时先看这一项。同时看 `adapter.resolved`：
 `false` 表示模块还没加载，此时的 `mode` 只是初始值，不代表实际能力。
 
 ### 包解析为什么容易失败
 
 本插件被 junction 链接进 profile，`import.meta.url` 解析到的是链接的**目标**
-（`D:\openclaw-data\openclaw-dsh-bus`），从那里向上找不到 profile 的 `node_modules` ——
+（`D:\openclaw-data\dsh-session-send`），从那里向上找不到 profile 的 `node_modules` ——
 `createRequire` 必然 `MODULE_NOT_FOUND`。
 
 而且本机只有 `DSH_PROFILE` + `DSH_HOME`，**没有** `DSH_PROFILE_DIR`。

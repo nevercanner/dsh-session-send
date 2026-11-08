@@ -2,7 +2,7 @@
  * 测试 11：dsh-team 包解析（真实事故回归）。
  *
  * 事故：插件被 junction 链接进 profile，`import.meta.url` 解析到的是链接的**目标**
- * （`D:\openclaw-data\openclaw-dsh-bus`），从那里向上找不到 profile 的 node_modules，
+ * （`D:\openclaw-data\dsh-session-send`），从那里向上找不到 profile 的 node_modules，
  * 于是 `createRequire` 永远 MODULE_NOT_FOUND —— adapter 退化为 fs-only。
  *
  * 而本机只有 `DSH_PROFILE` + `DSH_HOME`，**没有** `DSH_PROFILE_DIR`，

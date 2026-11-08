@@ -172,7 +172,7 @@ export class SessionPusher {
       return { live: true, outcome: 'steered', targetId: target, detail: `已注入并唤醒目标${suffix}` }
     } catch (error) {
       // 唤醒失败不代表消息丢了（已落库），如实报告。
-      this.options.logger?.warn?.(`[openclaw-dsh-bus] 推送到 ${target} 失败：${String(error)}`)
+      this.options.logger?.warn?.(`[dsh-session-send] 推送到 ${target} 失败：${String(error)}`)
       return {
         live: true,
         outcome: 'notified',
@@ -200,10 +200,10 @@ export class SessionPusher {
       if (agent === undefined || agent === null) {
         return { resumed: false, error: '冷启动返回空句柄' }
       }
-      this.options.logger?.info?.(`[openclaw-dsh-bus] 冷启动会话成功：${sessionId}`)
+      this.options.logger?.info?.(`[dsh-session-send] 冷启动会话成功：${sessionId}`)
       return { agent, resumed: true }
     } catch (error) {
-      this.options.logger?.warn?.(`[openclaw-dsh-bus] 冷启动 ${sessionId} 失败：${String(error)}`)
+      this.options.logger?.warn?.(`[dsh-session-send] 冷启动 ${sessionId} 失败：${String(error)}`)
       return { resumed: false, error: `冷启动失败：${String(error)}` }
     }
   }
@@ -223,7 +223,7 @@ export class SessionPusher {
       try {
         agent.wakeDriver()
       } catch (error) {
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] wakeDriver 失败：${String(error)}`)
+        this.options.logger?.warn?.(`[dsh-session-send] wakeDriver 失败：${String(error)}`)
         return false
       }
       // 给驱动一点时间切到 running
@@ -256,7 +256,7 @@ export class SessionPusher {
     const content = [{ type: 'text', text }]
     const source = {
       kind: 'user',
-      origin: 'openclaw-dsh-bus',
+      origin: 'dsh-session-send',
       from: 'dsh-bus',
       target,
     }
@@ -265,7 +265,7 @@ export class SessionPusher {
       try {
         return factory({ content, source })
       } catch (error) {
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] createUserMessage 失败，用最小形状代替：${String(error)}`)
+        this.options.logger?.warn?.(`[dsh-session-send] createUserMessage 失败，用最小形状代替：${String(error)}`)
       }
     }
     return { id: `bus-${Date.now()}-${Math.random().toString(16).slice(2)}`, role: 'user', content, source }
@@ -304,7 +304,7 @@ export class SessionPusher {
     }
 
     this.options.logger?.warn?.(
-      '[openclaw-dsh-bus] 未能解析 @deepseek-ai/dsh-llm 的 createUserMessage，' +
+      '[dsh-session-send] 未能解析 @deepseek-ai/dsh-llm 的 createUserMessage，' +
         '将用最小形状消息代替（目标会话可能看不到该消息的对话记录）',
     )
     return undefined

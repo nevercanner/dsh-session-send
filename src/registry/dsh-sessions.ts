@@ -294,7 +294,7 @@ export class DshSessionsProvider implements RegistryProvider {
       const list = agents?.list?.()
       return Array.isArray(list) ? list : []
     } catch (error) {
-      this.options.logger?.warn?.(`[openclaw-dsh-bus] 读 agents.list() 失败：${String(error)}`)
+      this.options.logger?.warn?.(`[dsh-session-send] 读 agents.list() 失败：${String(error)}`)
       return []
     }
   }
@@ -313,7 +313,7 @@ export class DshSessionsProvider implements RegistryProvider {
       const rows = await query.listSessions()
       return Array.isArray(rows) ? (rows as SessionRecord[]) : []
     } catch (error) {
-      this.options.logger?.warn?.(`[openclaw-dsh-bus] 读 sessionQuery.listSessions() 失败：${String(error)}`)
+      this.options.logger?.warn?.(`[dsh-session-send] 读 sessionQuery.listSessions() 失败：${String(error)}`)
       return []
     }
   }

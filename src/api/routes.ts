@@ -6,13 +6,13 @@
  * `ctx.connection.requestRejection(req)`（与 dsh-agent-teams 的 authenticatedWebRoutes 同款做法）。
  *
  * 路由表：
- *   GET  /plugins/openclaw-dsh-bus/status      装配/开关/兼容性诊断（含未开启原因）
- *   GET  /plugins/openclaw-dsh-bus/agents      可寻址 agent/session 列表（含未读数）
- *   GET  /plugins/openclaw-dsh-bus/messages    消息流（?owner=&limit=&since=&unread=1）
- *   POST /plugins/openclaw-dsh-bus/send        发消息 { from, to, kind, payload, replyTo? }
- *   POST /plugins/openclaw-dsh-bus/read        标记已读 { target, ids }
- *   GET  /plugins/openclaw-dsh-bus/project     某个项目此刻的开关状态（?project=<路径>）
- *   POST /plugins/openclaw-dsh-bus/project     切换开关 { project, enabled? }（省略 enabled = 翻转）
+ *   GET  /plugins/dsh-session-send/status      装配/开关/兼容性诊断（含未开启原因）
+ *   GET  /plugins/dsh-session-send/agents      可寻址 agent/session 列表（含未读数）
+ *   GET  /plugins/dsh-session-send/messages    消息流（?owner=&limit=&since=&unread=1）
+ *   POST /plugins/dsh-session-send/send        发消息 { from, to, kind, payload, replyTo? }
+ *   POST /plugins/dsh-session-send/read        标记已读 { target, ids }
+ *   GET  /plugins/dsh-session-send/project     某个项目此刻的开关状态（?project=<路径>）
+ *   POST /plugins/dsh-session-send/project     切换开关 { project, enabled? }（省略 enabled = 翻转）
  *
  * 项目根的来源：请求体/查询里的 `project` 由 **Client 从宿主 Workspace 快照**取得，
  * 不是任意字符串 —— 但我们仍在服务端做「必须存在且是目录」的校验，
@@ -172,7 +172,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
             await handler(req, res)
           } catch (error) {
             const busError = error instanceof BusError ? error : undefined
-            if (busError === undefined) deps.logger?.warn?.(`[openclaw-dsh-bus] route ${path} 失败：${String(error)}`)
+            if (busError === undefined) deps.logger?.warn?.(`[dsh-session-send] route ${path} 失败：${String(error)}`)
             sendJson(res, busError === undefined ? 500 : errorStatus(busError.code), {
               error:
                 busError === undefined
@@ -188,7 +188,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
       // 这里**不能让一条失败阻断后面的注册** —— 否则后面的路由（例如 /project）永远挂不上，
       // 而前一条已经成功，症状会变成「路由表缺一截」这种极难排查的形态。
       deps.logger?.warn?.(
-        `[openclaw-dsh-bus] 注册路由 ${path} 失败（可能上一代未摘除，跳过）：${String(error)}`,
+        `[dsh-session-send] 注册路由 ${path} 失败（可能上一代未摘除，跳过）：${String(error)}`,
       )
       return () => {}
     }
@@ -200,13 +200,13 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
     registered.push({ path, dispose: register(path, handler) })
   }
 
-  add('/plugins/openclaw-dsh-bus/status', async (req, res) => {
+  add('/plugins/dsh-session-send/status', async (req, res) => {
     if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'GET only' } })
     // 用异步版：先让 dsh-team adapter 完成模块加载，adapter.mode 才是真实值
     sendJson(res, 200, { status: await bus.statusAsync() })
   })
 
-  add('/plugins/openclaw-dsh-bus/agents', async (req, res) => {
+  add('/plugins/dsh-session-send/agents', async (req, res) => {
     if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'GET only' } })
     const url = new URL(String(req.url ?? '/'), 'http://x')
     const owner = url.searchParams.get('owner')?.trim() ?? ''
@@ -221,7 +221,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
     })
   })
 
-  add('/plugins/openclaw-dsh-bus/messages', async (req, res) => {
+  add('/plugins/dsh-session-send/messages', async (req, res) => {
     if (req.method !== 'GET') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'GET only' } })
     const url = new URL(String(req.url ?? '/'), 'http://x')
     const owner = url.searchParams.get('owner')?.trim() ?? ''
@@ -237,7 +237,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
     sendJson(res, 200, { messages })
   })
 
-  add('/plugins/openclaw-dsh-bus/send', async (req, res) => {
+  add('/plugins/dsh-session-send/send', async (req, res) => {
     if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'POST only' } })
     const body = await readJsonBody(req)
     const request = toSendRequest(body)
@@ -245,7 +245,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
     sendJson(res, 200, { receipt })
   })
 
-  add('/plugins/openclaw-dsh-bus/read', async (req, res) => {
+  add('/plugins/dsh-session-send/read', async (req, res) => {
     if (req.method !== 'POST') return sendJson(res, 405, { error: { code: 'E_METHOD', message: 'POST only' } })
     const body = await readJsonBody(req)
     const target = typeof body['target'] === 'string' ? body['target'] : ''
@@ -256,7 +256,7 @@ export function registerBusRoutes(deps: RouteDeps): Array<{ path: string; dispos
   })
 
   // ── 项目开关：状态读取 ──
-  add('/plugins/openclaw-dsh-bus/project', async (req, res) => {
+  add('/plugins/dsh-session-send/project', async (req, res) => {
     if (req.method === 'GET') {
       const url = new URL(String(req.url ?? '/'), 'http://x')
       const projectRoot = requireProjectDir(url.searchParams.get('project'))

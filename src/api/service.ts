@@ -94,7 +94,7 @@ export class BusService {
     const current = this.runtime
     if (current !== undefined && samePath(current.projectRoot, requested)) return current
     if (this.factory === undefined) return this.requireRuntime()
-    this.logger?.info?.(`[openclaw-dsh-bus] 调用来自另一个项目，切换 runtime：${requested}`)
+    this.logger?.info?.(`[dsh-session-send] 调用来自另一个项目，切换 runtime：${requested}`)
     return this.reconfigure(requested)
   }
 
@@ -115,7 +115,7 @@ export class BusService {
    */
   async reconfigure(projectRoot: string): Promise<BusRuntime> {
     if (this.factory === undefined) {
-      throw new BusError('E_DISABLED', 'openclaw-dsh-bus 未提供 runtime 工厂，无法热切换')
+      throw new BusError('E_DISABLED', 'dsh-session-send 未提供 runtime 工厂，无法热切换')
     }
     // 串行化：并发点击只跑一次
     if (this.switching !== undefined) {
@@ -130,7 +130,7 @@ export class BusService {
         await previous.transport.dispose().catch(() => undefined)
       }
       this.logger?.info?.(
-        `[openclaw-dsh-bus] ${projectRoot} 重新装配：${next.config.enabled ? '已启用' : '已关闭'}`,
+        `[dsh-session-send] ${projectRoot} 重新装配：${next.config.enabled ? '已启用' : '已关闭'}`,
       )
       return next
     })()
@@ -200,7 +200,7 @@ export class BusService {
     // 其它项目：**只读配置**，不装配。
     // 装配会建 transport（sqlite 会建目录与库文件）——「看一眼状态」不该产生任何副作用。
     if (this.probe === undefined) {
-      throw new BusError('E_DISABLED', 'openclaw-dsh-bus 未提供项目探测，无法读取其它项目的状态')
+      throw new BusError('E_DISABLED', 'dsh-session-send 未提供项目探测，无法读取其它项目的状态')
     }
     return this.probe(projectRoot)
   }
@@ -304,7 +304,7 @@ export class BusService {
 
   private requireRuntime(): BusRuntime {
     if (this.runtime === undefined) {
-      throw new BusError('E_DISABLED', 'openclaw-dsh-bus 尚未装配（mount 未执行）')
+      throw new BusError('E_DISABLED', 'dsh-session-send 尚未装配（mount 未执行）')
     }
     return this.runtime
   }

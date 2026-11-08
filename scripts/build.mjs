@@ -107,7 +107,7 @@ export interface SendReceipt { ok: true; messages: BusMessage[]; deliveries: Arr
     'utf8',
   )
 
-  console.log(`[openclaw-dsh-bus] build 完成：${converted} 个 TS 模块 → lib/，${copied} 个 JS 复制`)
+  console.log(`[dsh-session-send] build 完成：${converted} 个 TS 模块 → lib/，${copied} 个 JS 复制`)
 }
 
 await main()

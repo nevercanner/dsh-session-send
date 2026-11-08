@@ -18,17 +18,17 @@
  *   拿 sessionId → 用宿主 useSessions 找到它的 workspace → 读/写该项目的 .dsh-bus.json。
  *   菜单文字直接写清作用对象（项目名），避免误解成「只对这个会话」。
  *
- * 数据面：只调 host 半暴露的 /plugins/openclaw-dsh-bus/*，
+ * 数据面：只调 host 半暴露的 /plugins/dsh-session-send/*，
  * 不直接读写文件、不自己改配置。
  */
 window.__ModuleLoader__.load({
-  id: 'openclaw-dsh-bus',
+  id: 'dsh-session-send',
   factory(require) {
     const React = require('react')
     const h = React.createElement
 
-    const NS = 'openclaw-dsh-bus'
-    const API = '/plugins/openclaw-dsh-bus'
+    const NS = 'dsh-session-send'
+    const API = '/plugins/dsh-session-send'
 
     /** 侧栏图标：一条「总线 + 两个端点」，跟插件的实际含义对应。 */
     function BusIcon(props) {

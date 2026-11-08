@@ -49,12 +49,12 @@ function makeCtx(webServer, warnings) {
 }
 
 const ALL_PATHS = [
-  '/plugins/openclaw-dsh-bus/status',
-  '/plugins/openclaw-dsh-bus/agents',
-  '/plugins/openclaw-dsh-bus/messages',
-  '/plugins/openclaw-dsh-bus/send',
-  '/plugins/openclaw-dsh-bus/read',
-  '/plugins/openclaw-dsh-bus/project',
+  '/plugins/dsh-session-send/status',
+  '/plugins/dsh-session-send/agents',
+  '/plugins/dsh-session-send/messages',
+  '/plugins/dsh-session-send/send',
+  '/plugins/dsh-session-send/read',
+  '/plugins/dsh-session-send/project',
 ]
 
 test('干净环境：六条路由全部注册', () => {
@@ -84,14 +84,14 @@ test('上一代残留 5 条：只跳过它们，新的 /project 仍必须挂上'
   // 六条都「登记」了（失败的返回空 dispose，但不再中断）
   assert.equal(routes.length, ALL_PATHS.length, '注册循环不许中断')
   // /project 真的进了宿主表
-  assert.ok(ws.table.has('/plugins/openclaw-dsh-bus/project'), '/project 必须被挂上')
+  assert.ok(ws.table.has('/plugins/dsh-session-send/project'), '/project 必须被挂上')
   // 五条重复的都被记录成警告，便于排查
   assert.equal(warnings.filter((line) => line.includes('duplicate')).length, 5)
 })
 
 test('中途一条重复：后面的路由不被连带跳过', () => {
   // 只有 /send 残留（中间那条）
-  const ws = makeWebServer(['/plugins/openclaw-dsh-bus/send'])
+  const ws = makeWebServer(['/plugins/dsh-session-send/send'])
   const warnings = []
   registerBusRoutes({
     bus: fakeBus,
@@ -99,9 +99,9 @@ test('中途一条重复：后面的路由不被连带跳过', () => {
     ctx: makeCtx(ws, warnings),
     logger: { warn: (m) => warnings.push(m) },
   })
-  assert.ok(ws.table.has('/plugins/openclaw-dsh-bus/status'), 'status 在 send 之前，应正常')
-  assert.ok(ws.table.has('/plugins/openclaw-dsh-bus/read'), 'read 在 send 之后，也必须正常')
-  assert.ok(ws.table.has('/plugins/openclaw-dsh-bus/project'), '最后一条也必须正常')
+  assert.ok(ws.table.has('/plugins/dsh-session-send/status'), 'status 在 send 之前，应正常')
+  assert.ok(ws.table.has('/plugins/dsh-session-send/read'), 'read 在 send 之后，也必须正常')
+  assert.ok(ws.table.has('/plugins/dsh-session-send/project'), '最后一条也必须正常')
   assert.equal(warnings.length, 1)
 })
 
@@ -116,14 +116,14 @@ test('webServer 缺席：返回空数组，不抛（headless profile）', () => 
 })
 
 test('失败的那条返回可调用的 dispose（调用不抛）', () => {
-  const ws = makeWebServer(['/plugins/openclaw-dsh-bus/status'])
+  const ws = makeWebServer(['/plugins/dsh-session-send/status'])
   const routes = registerBusRoutes({
     bus: fakeBus,
     control: fakeControl,
     ctx: makeCtx(ws, []),
     logger: { warn: () => {} },
   })
-  const failed = routes.find((entry) => entry.path === '/plugins/openclaw-dsh-bus/status')
+  const failed = routes.find((entry) => entry.path === '/plugins/dsh-session-send/status')
   assert.ok(failed !== undefined)
   assert.equal(typeof failed.dispose, 'function')
   assert.doesNotThrow(() => failed.dispose())

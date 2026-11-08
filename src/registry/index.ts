@@ -103,7 +103,7 @@ export function createRegistry(options: CreateRegistryOptions): RegistryBundle {
         break
       default:
         // 未知来源（例如旧配置里的 openclaw-sessions）直接跳过，不装配、不报错。
-        options.logger?.warn?.(`[openclaw-dsh-bus] 忽略未知注册表来源：${String(source)}`)
+        options.logger?.warn?.(`[dsh-session-send] 忽略未知注册表来源：${String(source)}`)
         break
     }
   }

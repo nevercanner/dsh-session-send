@@ -1,4 +1,4 @@
--- openclaw-dsh-bus 迁移 / 初始化 SQL（与 src/transport/transport.ts 的 BUS_DDL 逐字一致）
+-- dsh-session-send 迁移 / 初始化 SQL（与 src/transport/transport.ts 的 BUS_DDL 逐字一致）
 --
 -- 存储位置：**项目内** `<workspace>/.dsh-bus/bus.db`
 --

@@ -1,7 +1,7 @@
 /**
  * 宿主包的解析器。
  *
- * 一个本地插件包 `D:\openclaw-data\openclaw-dsh-bus` 在开发期**没有** node_modules：
+ * 一个本地插件包 `D:\openclaw-data\dsh-session-send` 在开发期**没有** node_modules：
  * 它被 junction 链接进 profile 后才由 profile 提供 `@deepseek-ai/*`。
  *
  * 解决办法（与 dsh-task-ledger 的 loadSchemastery 同一个思路，只是做得更彻底）：

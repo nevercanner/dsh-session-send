@@ -1,5 +1,5 @@
 /**
- * openclaw-dsh-bus —— 插件入口（**DSH 宿主侧**）。
+ * dsh-session-send —— 插件入口（**DSH 宿主侧**）。
  *
  * ── 定位（先读这段）────────────────────────────────────────────
  * 这是一个**DSH 插件**，运行在 DSH 进程里。它参考 OpenClaw 的 `session send`
@@ -25,7 +25,7 @@
  *   transport  src/transport/*   只认 Transport 接口（sqlite | file | in-process）
  *   registry   src/registry/*    只认 RegistryProvider 接口（dsh-team | dsh-sessions）
  *   router     src/router/*      只认 Registry + Transport 接口，**不读任何配置文件**
- *   ui         src/ui/*          只通过 /plugins/openclaw-dsh-bus/* HTTP 面
+ *   ui         src/ui/*          只通过 /plugins/dsh-session-send/* HTTP 面
  */
 import { assertHostCompatibility, compatibilityReport } from './compat.ts'
 import { DEFAULT_PROJECT_CONFIG_NAME, loadProjectConfig } from './config/project-config.ts'
@@ -41,7 +41,7 @@ import { resolveService } from './service-access.ts'
 import type { BusConfig } from './types.ts'
 import { importSchemastery } from './host-modules.ts'
 
-export const name = 'openclaw-dsh-bus'
+export const name = 'dsh-session-send'
 
 /** 插件描述（宿主插件列表里展示）。 */
 export const description =
@@ -235,14 +235,14 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
     await service.mount(initial)
   } catch (error) {
     // 装配失败不该拖垮宿主：记录并保持「未装配」状态，UI 上显示原因。
-    logger.warn(`[openclaw-dsh-bus] 装配失败：${String(error)}`)
+    logger.warn(`[dsh-session-send] 装配失败：${String(error)}`)
     return
   }
 
   mounted = { service, disposers }
 
   logger.info(
-    `[openclaw-dsh-bus] 项目 ${projectRoot}：` +
+    `[dsh-session-send] 项目 ${projectRoot}：` +
       (initial.config.enabled
         ? `已启用（transport=${initial.config.transport.kind}）`
         : `未启用（${initial.configPresent ? `${configName} 里 enabled 不是 true` : `${configName} 不存在`}）——可在侧栏 Session 行「...」菜单里一键开启`),
@@ -275,14 +275,14 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
           /* 卸载不应抛出 */
         }
       }
-    }, 'openclaw-dsh-bus: routes')
+    }, 'dsh-session-send: routes')
   })
 
   // ── 4. 模型侧工具 ──
   ctx.inject?.(['tools'], (toolCtx: any) => {
     const tools = toolCtx?.tools
     if (tools === undefined) {
-      logger.warn('[openclaw-dsh-bus] tools 服务未就位，模型侧工具不注册')
+      logger.warn('[dsh-session-send] tools 服务未就位，模型侧工具不注册')
       return
     }
     const toolDisposers = registerBusTools({ bus: service, tools, logger })
@@ -295,7 +295,7 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
           /* ignore */
         }
       }
-    }, 'openclaw-dsh-bus: tools')
+    }, 'dsh-session-send: tools')
   })
 
   // ── 5. 只读诊断命令：在 Web GUI 斜杠菜单里能看到当前状态与「为什么没开」──
@@ -303,7 +303,7 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
     try {
       const off = commandCtx.commands.register({
         name: 'dsh-bus',
-        description: 'Show openclaw-dsh-bus status: project switch, transport, registry sources, adapter mode.',
+        description: 'Show dsh-session-send status: project switch, transport, registry sources, adapter mode.',
         async execute() {
           const status = await service.statusAsync()
           const compat = compatibilityReport(hostVersion)
@@ -314,14 +314,14 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
           return [
             {
               type: 'text',
-              text: `openclaw-dsh-bus 状态\n${JSON.stringify(status, null, 2)}\n\n兼容性\n${JSON.stringify(compat, null, 2)}${hint}`,
+              text: `dsh-session-send 状态\n${JSON.stringify(status, null, 2)}\n\n兼容性\n${JSON.stringify(compat, null, 2)}${hint}`,
             },
           ]
         },
       })
       if (typeof off === 'function') disposers.push(off)
     } catch (error) {
-      logger.warn(`[openclaw-dsh-bus] 注册 /dsh-bus 命令失败：${String(error)}`)
+      logger.warn(`[dsh-session-send] 注册 /dsh-bus 命令失败：${String(error)}`)
     }
   })
 
@@ -329,7 +329,7 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
   ctx.effect?.(() => () => {
     void service.unmount()
     mounted = undefined
-  }, 'openclaw-dsh-bus: lifetime')
+  }, 'dsh-session-send: lifetime')
 }
 
 /** 供测试与诊断使用（宿主不会调用）。 */

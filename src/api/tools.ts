@@ -49,7 +49,7 @@ export function registerBusTools(deps: ToolDeps): Array<() => void> {
       const off = tools.register(definition)
       if (typeof off === 'function') dispose.push(off)
     } catch (error) {
-      deps.logger?.warn?.(`[openclaw-dsh-bus] 注册工具 ${definition.name} 失败：${String(error)}`)
+      deps.logger?.warn?.(`[dsh-session-send] 注册工具 ${definition.name} 失败：${String(error)}`)
     }
   }
 

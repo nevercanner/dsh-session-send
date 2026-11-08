@@ -242,7 +242,7 @@ export class DshTeamAdapter implements RegistryProvider {
       } catch (error) {
         // 它的函数签名变了（版本漂移）：降级到 fs-only，保证消息不丢。
         this.lastError = `mailbox 模式调用失败，已降级 fs-only：${String(error)}`
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] ${this.lastError}`)
+        this.options.logger?.warn?.(`[dsh-session-send] ${this.lastError}`)
       }
     }
 
@@ -289,7 +289,7 @@ export class DshTeamAdapter implements RegistryProvider {
       return { ok: true, mode: 'queued', messageId: String(created?.messageId ?? '') || undefined, detail: 'official agentTeams service' }
     } catch (error) {
       this.lastError = `official agentTeams service 投递失败，降级到 dsh-team mailbox：${String(error)}`
-      this.options.logger?.warn?.(`[openclaw-dsh-bus] ${this.lastError}`)
+      this.options.logger?.warn?.(`[dsh-session-send] ${this.lastError}`)
       return undefined
     }
   }
@@ -463,7 +463,7 @@ export class DshTeamAdapter implements RegistryProvider {
         typeof members?.deliverToMember === 'function' || typeof members?.steerCaptainReport === 'function'
       this.localMode = hasDelivery ? 'mailbox' : 'fs-only'
       this.options.logger?.info?.(
-        `[openclaw-dsh-bus] dsh-team adapter 就绪：${dir}（local mode = ${this.localMode}）`,
+        `[dsh-session-send] dsh-team adapter 就绪：${dir}（local mode = ${this.localMode}）`,
       )
     } else {
       this.lastError = `已找到 ${dir} 但子模块加载失败，adapter 用 fs-only 兜底`
@@ -484,7 +484,7 @@ export class DshTeamAdapter implements RegistryProvider {
       try {
         return await import(pathToFileURL(file).href)
       } catch (error) {
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] 加载 ${file} 失败：${String(error)}`)
+        this.options.logger?.warn?.(`[dsh-session-send] 加载 ${file} 失败：${String(error)}`)
         return undefined
       }
     }
@@ -518,7 +518,7 @@ function randomId(): string {
  *
  * 为什么不能只靠 `createRequire(import.meta.url)`：
  * 本插件被 junction 链接进 profile，`import.meta.url` 解析到的是
- * `D:\openclaw-data\openclaw-dsh-bus\...`（链接的**目标**），
+ * `D:\openclaw-data\dsh-session-send\...`（链接的**目标**），
  * 从那里向上找不到 profile 的 node_modules —— 于是永远 MODULE_NOT_FOUND。
  *
  * 所以按可信度依次尝试：

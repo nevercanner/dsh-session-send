@@ -1,6 +1,6 @@
 **English** · [简体中文](./README.zh.md)
 
-# openclaw-dsh-bus
+# dsh-session-send
 
 A session bus for DSH: lets **independent DSH sessions / agents send messages to each other** and wake each other up — no human copying prompts between windows.
 

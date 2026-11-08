@@ -270,7 +270,7 @@ export class DefaultRouter implements Router {
         const delivery = await this.options.dshTeam.deliver(target, fromLabel(message), content, undefined)
         return { ...base, mode: delivery.mode, detail: delivery.detail }
       } catch (error) {
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] 投递到 ${target.id} 失败（消息已落库）：${String(error)}`)
+        this.options.logger?.warn?.(`[dsh-session-send] 投递到 ${target.id} 失败（消息已落库）：${String(error)}`)
         return { ...base, mode: 'failed', detail: String(error) }
       }
     }
@@ -285,7 +285,7 @@ export class DefaultRouter implements Router {
         const mapped = mapOutcome(pushed.outcome)
         return { ...base, mode: mapped, detail: pushed.detail }
       } catch (error) {
-        this.options.logger?.warn?.(`[openclaw-dsh-bus] 推送到 ${target.id} 失败（消息已落库）：${String(error)}`)
+        this.options.logger?.warn?.(`[dsh-session-send] 推送到 ${target.id} 失败（消息已落库）：${String(error)}`)
         return { ...base, mode: 'failed', detail: String(error) }
       }
     }

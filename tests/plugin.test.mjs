@@ -132,7 +132,7 @@ test('未开启（项目文件不存在）：装配成功但 send 被门禁挡�
 
     // 工具与路由都注册了（UI 需要它们来展示「未开启」与开启方法）
     assert.ok(host.tools.has('dsh_bus_send'))
-    assert.ok(host.routes.has('/plugins/openclaw-dsh-bus/status'))
+    assert.ok(host.routes.has('/plugins/dsh-session-send/status'))
 
     const sendTool = host.tools.get('dsh_bus_send')
     await assert.rejects(
@@ -279,27 +279,27 @@ test('HTTP 面：status / agents / messages / send / read 五个路由都可用'
       return captured
     }
 
-    const status = await call('/plugins/openclaw-dsh-bus/status')
+    const status = await call('/plugins/dsh-session-send/status')
     assert.equal(status.status, 200)
     assert.equal(status.body.status.enabled, true)
     assert.equal(status.body.status.projectRoot, dir)
 
-    const agents = await call('/plugins/openclaw-dsh-bus/agents?owner=s-1')
+    const agents = await call('/plugins/dsh-session-send/agents?owner=s-1')
     assert.equal(agents.status, 200)
     assert.equal(agents.body.agents.length, 2)
 
-    const sent = await call('/plugins/openclaw-dsh-bus/send', {
+    const sent = await call('/plugins/dsh-session-send/send', {
       method: 'POST',
       body: JSON.stringify({ from: 's-1', to: 'beta', kind: 'text', payload: { text: 'via http' } }),
     })
     assert.equal(sent.status, 200)
     assert.equal(sent.body.receipt.messages.length, 1)
 
-    const messages = await call('/plugins/openclaw-dsh-bus/messages?owner=s-2')
+    const messages = await call('/plugins/dsh-session-send/messages?owner=s-2')
     assert.equal(messages.status, 200)
     assert.equal(messages.body.messages.length, 1)
 
-    const read = await call('/plugins/openclaw-dsh-bus/read', {
+    const read = await call('/plugins/dsh-session-send/read', {
       method: 'POST',
       body: JSON.stringify({ target: 's-2', ids: messages.body.messages.map((message) => message.id) }),
     })
@@ -324,7 +324,7 @@ test('HTTP 面：目标不存在返回 404 与明确错误码', async () => {
     host.provide('agents', { list: () => [{ id: 's-1', session: { header: { title: 'alpha', cwd: dir } } }] })
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
-    const handler = host.routes.get('/plugins/openclaw-dsh-bus/send')
+    const handler = host.routes.get('/plugins/dsh-session-send/send')
     const body = JSON.stringify({ from: 's-1', to: 'ghost', payload: { text: 'x' } })
     const req = { method: 'POST', url: '/x', headers: {} }
     req.on = (event, callback) => {

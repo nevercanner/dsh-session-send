@@ -91,7 +91,7 @@ export async function loadProjectConfig(options: LoadProjectConfigOptions): Prom
     validation.value.enabled = false
   }
 
-  for (const warning of warnings) options.logger?.warn?.(`[openclaw-dsh-bus] ${warning}`)
+  for (const warning of warnings) options.logger?.warn?.(`[dsh-session-send] ${warning}`)
 
   return {
     value: validation.value,

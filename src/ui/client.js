@@ -600,14 +600,17 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // 客户端侧的契约与宿主侧不同：宿主用 ctx.inject(['slots'], cb) 等待服务，
+    // 客户端 runner 直接把已注入的服务挂在 ctx 上（见 dsh-cordis-client-runner
+    // 的示例：inject: ['slots'], apply(ctx) { ctx.slots.inject(...) }）。
+    // 早先这里套了宿主侧的 ctx.inject 写法，客户端上不成立 —— 整段注册从未执行，
+    // 界面上少一个菜单项，且没有任何报错。
     return {
       inject: ['slots', 'layout'],
       apply(ctx) {
         let selectPanel = () => {}
-
-        ctx.inject(['slots'], (sub) => {
-          const slots = sub.slots
-          if (slots === undefined) return
+        const slots = ctx.slots
+        if (slots !== undefined && typeof slots.inject === 'function' && typeof slots.register === 'function') {
 
           // ① Session 行「...」菜单里的项目开关（本插件的主要入口）。
           //    ui-primitives 的 MenuItemButton 与 slot 级 useMenuOpenState 由宿主注入，
@@ -637,12 +640,13 @@ window.__ModuleLoader__.load({
               h(UnreadFloater, { pollMs: 8000, onOpen: () => selectPanel(NS) }),
             ),
           )
-        })
+        }
 
-        ctx.inject(['layout'], (sub) => {
-          const layout = sub.layout
-          if (layout !== undefined) selectPanel = (id) => layout.selectPanel(id)
-        })
+        // layout 同样直接读 ctx.layout
+        const layout = ctx.layout
+        if (layout !== undefined && typeof layout.selectPanel === 'function') {
+          selectPanel = (id) => layout.selectPanel(id)
+        }
       },
     }
 

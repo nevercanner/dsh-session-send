@@ -233,7 +233,7 @@ window.__ModuleLoader__.load({
           type: 'button',
           role: 'menuitem',
           disabled,
-          title: title ?? (displayTitle ? `项目：${projectName}` : undefined),
+          title: title ?? (props?.displayTitle ? `项目：${projectName}` : undefined),
           onClick: (event) => {
             event.stopPropagation()
             void toggle()
@@ -596,8 +596,23 @@ window.__ModuleLoader__.load({
       }
 
       function buildRow(menu, sessionId) {
-        // 有干净 slot 行就不重复插
+        // 有本兜底插的行就不重复插
         if (menu.querySelector(`[${ATTR}]`) !== null) return
+        // slot 路径已经渲染出总线行（displayTitle 修好后它终于能渲染了），
+        // 这里再插就是两行 —— 按文字前缀认，见到就不再插
+        const slotRowPresent = Array.from(menu.querySelectorAll('[role="menuitem"]')).some((node) =>
+          (node.textContent || '').trim().startsWith('会话总线'),
+        )
+        if (slotRowPresent) return
+        // 只认「会话行」的 ... 菜单：宿主给会话行菜单的固定项是 置顶会话 / 归档会话 / 复制 Session ID。
+        // 模型选择菜单在根面板时同样是 role="menu" + role="menuitem"，以前会被误判成会话行菜单，
+        // 于是往 React 管理的容器里插自建节点 → React 重渲染把它抹掉 → MutationObserver 再插一次，
+        // 打开模型菜单就变成「插入 → 重渲染 → 再插入」的自激。这里用白名单把它挡掉。
+        const isSessionRowMenu = Array.from(menu.querySelectorAll('[role="menuitem"]')).some((node) => {
+          const label = (node.textContent || '').trim()
+          return label.startsWith('置顶会话') || label.startsWith('归档会话') || label.includes('Session ID')
+        })
+        if (!isSessionRowMenu) return
         const reference = menu.querySelector('button[role="menuitem"]')
         if (reference === null) return
 
@@ -717,8 +732,23 @@ window.__ModuleLoader__.load({
           )
         }
 
-        // layout 同样直接读 ctx.layout
-        const layout = ctx.layout
+        // 拿 layout：写进 inject 会在缺少该服务的宿主上把整个 package park 掉
+        // （apply 不跑，菜单项永远不出现）；不写进 inject 又会被服务代理拦下，
+        // 抛 `cannot get property "layout" without inject`。两头都不通，只能问一句：
+        // 先试 ctx.get('layout')，再兜一层 try 读 ctx.layout，都拿不到就保持 noop。
+        let layout
+        try {
+          layout = ctx.get?.('layout')
+        } catch {
+          // ctx.get 在个别宿主上也会抛，忽略
+        }
+        if (layout === undefined) {
+          try {
+            layout = ctx.layout
+          } catch {
+            // 没声明 inject 时属性访问会抛，这里就是最后一道兜底
+          }
+        }
         if (layout !== undefined && typeof layout.selectPanel === 'function') {
           selectPanel = (id) => layout.selectPanel(id)
         }

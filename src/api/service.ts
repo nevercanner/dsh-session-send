@@ -13,6 +13,7 @@ import { BusError } from '../types.ts'
 import type { Transport } from '../transport/transport.ts'
 import type { Registry } from '../registry/registry.ts'
 import type { Router, BusSnapshot } from '../router/router.ts'
+import type { SessionPusher } from '../transport/session-push.ts'
 import type { DshTeamAdapter } from '../registry/dsh-team-adapter.ts'
 import type { ProjectSwitchState } from './control.ts'
 
@@ -26,6 +27,8 @@ export interface BusRuntime {
   transport: Transport
   registry: Registry
   router: Router
+  /** 跨会话投递器（redeliver 等重复投递也用它）。 */
+  sessions: SessionPusher
   dshTeam?: DshTeamAdapter
   warnings: string[]
   /** 项目配置文件是否存在。 */
@@ -96,6 +99,11 @@ export class BusService {
     if (this.factory === undefined) return this.requireRuntime()
     this.logger?.info?.(`[dsh-session-send] 调用来自另一个项目，切换 runtime：${requested}`)
     return this.reconfigure(requested)
+  }
+
+  /** 当前装配的 runtime（未装配返回 undefined）。redeliver 等只读才有权直接访问。 */
+  getRuntime(): BusRuntime | undefined {
+    return this.runtime
   }
 
   async mount(runtime: BusRuntime): Promise<void> {
@@ -324,8 +332,8 @@ export class BusService {
   private disabledReasonOf(runtime: BusRuntime): string | undefined {
     if (runtime.config.enabled) return undefined
     if (runtime.configDegraded) return '项目配置解析失败，已强制关闭'
-    if (runtime.configPresent) return '项目配置里 enabled 不是 true'
-    return `本项目未启用：${runtime.projectConfigPath} 不存在`
+    // 默认放行：只有显式 enabled:false 才关。走到这里一定是显式关或降级关。
+    return `${runtime.projectConfigPath} 里显式写了 enabled:false（默认是放行）`
   }
 
   private requireRuntime(): BusRuntime {

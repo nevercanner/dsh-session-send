@@ -34,6 +34,7 @@ import { SessionPusher } from './transport/session-push.ts'
 import { createRegistry, discoverProjectRoots } from './registry/index.ts'
 import { createRouter } from './router/index.ts'
 import { ReplyGuard } from './router/reply-guard.ts'
+import { Redeliverer } from './router/redeliver.ts'
 import { BusService, type BusRuntime } from './api/service.ts'
 import { registerBusRoutes } from './api/routes.ts'
 import { registerBusTools } from './api/tools.ts'
@@ -142,7 +143,9 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
     const loaded = await loadProjectConfig({
       projectRoot,
       configName,
-      baseConfig: { enabled: config.enabled === true } as Partial<BusConfig>,
+      // 默认放行（与 dsh-context-bridge 一致）：只有显式 enabled:false 才关闭插件自身，
+      // 缺省即装配。项目是否通信由 .dsh-bus.json 的 enabled 决定（同样默认放行）。
+      baseConfig: { enabled: config.enabled !== false } as Partial<BusConfig>,
       logger,
     })
     const busConfig: BusConfig = loaded.value
@@ -168,6 +171,7 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
       transport,
       registry,
       router,
+      sessions,
       dshTeam,
       warnings: loaded.warnings,
       configPresent: loaded.present,
@@ -230,8 +234,8 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
         : loaded.degraded
           ? '项目配置解析失败，已强制关闭'
           : loaded.present
-            ? '项目配置里 enabled 不是 true'
-            : `本项目未启用：${loaded.projectConfigPath} 不存在`,
+            ? `${loaded.projectConfigPath} 里显式写了 enabled:false`
+            : undefined,
       error: loaded.degraded ? '配置文件解析失败' : undefined,
     }
   }
@@ -260,8 +264,10 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
   logger.info(
     `[dsh-session-send] 项目 ${projectRoot}：` +
       (initial.config.enabled
-        ? `已启用（transport=${initial.config.transport.kind}）`
-        : `未启用（${initial.configPresent ? `${configName} 里 enabled 不是 true` : `${configName} 不存在`}）——可在侧栏 Session 行「...」菜单里一键开启`),
+        ? (initial.configPresent
+            ? `已启用（transport=${initial.config.transport.kind}）`
+            : `已启用（默认放行，无 ${configName}；如要关闭请写 {"enabled":false}）`)
+        : `未启用（${initial.configPresent ? `${configName} 里显式写了 enabled:false` : `${configName} 不存在`}）`),
   )
 
   // ── 2. 项目开关写入口（唯一写文件的地方）──
@@ -417,6 +423,57 @@ export async function apply(ctx: any, config: PluginConfig = {}): Promise<void> 
     disposers.push(() => replyGuard.reset())
   } catch (error) {
     logger.warn?.(`[dsh-session-send] 注册回传守卫失败：${String(error)}`)
+  }
+
+  // ── 5c. 重发器：接收方模型没配好时，等它被重新激活（模型就绪）自动补发 ──
+  //
+  // 判据：一条 bus 消息只要还没标为已读（dsh_bus_inbox markRead / UI 全部已读），
+  // 就说明它还没被真正处理。agent/created = 会话被创建/激活（模型此刻可用了），
+  // 此时把该会话名下的未处理消息重新投递一次。
+  // 默认关闭（config.router.redeliver.enabled=false）；只在本项目启用时生效。
+  const redeliverers = new Map<string, Redeliverer>()
+  try {
+    const onAgentCreated = async (payload: any) => {
+      const agent = payload?.agent
+      if (agent === undefined) return
+      const agentId = String(agent.id ?? '')
+      if (agentId === '') return
+      // 只处理当前装配项目内的会话：未装配或未启用则跳过
+      const runtime = service.getRuntime()
+      if (runtime === undefined) return
+      const cfg = runtime.config?.router?.redeliver
+      if (cfg?.enabled !== true) return
+      // 每个 runtime 复用一个 redeliverer（跨 projectRoot 隔离计数）——但当前是单 runtime，
+      // 直接按 projectRoot 缓存实例，避免每次 created 重建。
+      let redeliverer = redeliverers.get(runtime.projectRoot)
+      if (redeliverer === undefined) {
+        redeliverer = new Redeliverer({
+          enabled: true,
+          maxAttempts: Math.max(1, cfg.maxAttempts ?? 3),
+          transport: runtime.transport,
+          sessions: runtime.sessions,
+          deliveryMode: (message) => {
+            const raw = message?.meta?.['deliveryMode']
+            return raw === 'followup' || raw === 'notify' || raw === 'steer' ? raw : 'steer'
+          },
+          logger,
+        })
+        redeliverers.set(runtime.projectRoot, redeliverer)
+      }
+      try {
+        await redeliverer.onAgentCreated(agentId)
+        redeliverer.clearRound()
+      } catch (error) {
+        logger.warn?.(`[dsh-session-send] 触发重发失败（${agentId}）：${String(error)}`)
+      }
+    }
+    ctx.on?.('agent/created', onAgentCreated)
+    disposers.push(() => {
+      for (const r of redeliverers.values()) r.reset()
+      redeliverers.clear()
+    })
+  } catch (error) {
+    logger.warn?.(`[dsh-session-send] 注册重发器失败：${String(error)}`)
   }
 
   // ── 6. 卸载时回收 ──

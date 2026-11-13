@@ -123,11 +123,39 @@ test('fail-fast：宿主版本未知只警告，不抛', () => {
   assert.equal(warnings.length, 1)
 })
 
-test('未开启（项目文件不存在）：装配成功但 send 被门禁挡住，snapshot 是关闭态', async () => {
+test('默认放行（无项目文件）：装配即开启，send 不被门禁挡住，enabled=true', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-apply-'))
   let host
   try {
     host = fakeHost()
+    await apply(host.ctx, { projectRoot: dir })
+
+    // 工具与路由都注册了
+    assert.ok(host.tools.has('dsh_bus_send'))
+    assert.ok(host.routes.has('/plugins/dsh-session-send/status'))
+
+    const configVal = (await import('../src/config/schema.ts')).validateConfig
+    const { internals } = await import('../src/index.ts')
+    const service = internals().mounted.service
+    assert.equal(service.config().enabled, true, '无 .dsh-bus.json 默认放行')
+    assert.equal(service.config().scope, 'project')
+
+    const status = service.status()
+    assert.equal(status.projectRoot, dir)
+    assert.equal(status.configPresent, false)
+    assert.equal(status.disabledReason, undefined, '默认放行：disabledReason 为空')
+  } finally {
+    host?.dispose?.()
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('显式 enabled:false（写 .dsh-bus.json）：装配成功但 send 被门禁挡住，snapshot 是关闭态', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'dshbus-apply-'))
+  let host
+  try {
+    host = fakeHost()
+    await writeFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), JSON.stringify({ enabled: false }), 'utf8')
     await apply(host.ctx, { projectRoot: dir, enabled: true })
 
     // 工具与路由都注册了（UI 需要它们来展示「未开启」与开启方法）
@@ -148,25 +176,8 @@ test('未开启（项目文件不存在）：装配成功但 send 被门禁挡�
 
     const status = service.status()
     assert.equal(status.projectRoot, dir)
-    assert.equal(status.configPresent, false)
-    assert.match(String(status.disabledReason), /不存在/)
-  } finally {
-    host?.dispose?.()
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('仅项目内生效：profile enabled=true 但项目文件不存在 → 仍然关闭', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'dshbus-scope-'))
-  let host
-  try {
-    host = fakeHost()
-    // profile patch 里 enabled=true（第一个锁打开），但项目没有 .dsh-bus.json
-    await apply(host.ctx, { projectRoot: dir, enabled: true })
-    const { internals } = await import('../src/index.ts')
-    const service = internals().mounted.service
-    assert.equal(service.config().enabled, false, '项目文件缺席时绝不能放开')
-    await assert.rejects(() => service.send({ from: 'a', to: 'b', payload: 'x' }), (e) => e.code === 'E_DISABLED')
+    assert.equal(status.configPresent, true)
+    assert.match(String(status.disabledReason), /enabled:false/)
   } finally {
     host?.dispose?.()
     await rm(dir, { recursive: true, force: true })

@@ -115,6 +115,17 @@ export interface BusConfig {
       enabled: boolean
       target: 'auto' | 'service' | 'mailbox'
     }
+    /**
+     * 重发机制：接收方会话因模型未配置等原因未能真正处理消息时，
+     * 等它被重新激活（模型配好）后自动把未处理的消息重新投递。
+     * 默认关闭 —— 这是主动动作，不应默认开启。
+     */
+    redeliver: {
+      /** 总开关。默认 false：不自动重发未处理消息。 */
+      enabled: boolean
+      /** 每条未处理消息最多重发次数（防风暴）。 */
+      maxAttempts: number
+    }
   }
   /**
    * 会话显示名映射：session id → 可读名（如 "跑章选手" / "门禁"）。

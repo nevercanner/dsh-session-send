@@ -107,7 +107,7 @@ async function call(host, path, init) {
 const post = (host, path, payload) =>
   call(host, path, { method: 'POST', body: JSON.stringify(payload) })
 
-test('点一下开启：写文件 + 热生效，随后立刻能发消息（不重启）', async () => {
+test('默认放行下点一下关闭：写盘(enabled:false) + 热生效，消息接口立刻 E_DISABLED', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-switch-'))
   let host
   try {
@@ -119,73 +119,83 @@ test('点一下开启：写文件 + 热生效，随后立刻能发消息（不�
       ],
       get: (id) => ({ id }),
     })
-    await apply(host.ctx, { projectRoot: dir, enabled: true })
+    await apply(host.ctx, { projectRoot: dir })
 
-    // 默认「报名后才参与」—— 这个用例测开关热生效，先让两个会话报名
-    const registerTool = host.tools.get('dsh_bus_register')
-    await registerTool.execute({ name: 'alpha' }, { agent: { id: 's-1' } })
-    await registerTool.execute({ name: 'beta' }, { agent: { id: 's-2' } })
-
-    // ① 初始：关闭
+    // ① 初始：默认放行（开启）
     const before = await call(host, '/plugins/dsh-session-send/status')
-    assert.equal(before.body.status.enabled, false)
+    assert.equal(before.body.status.enabled, true)
     assert.equal(before.body.status.configPresent, false)
-    assert.match(String(before.body.status.disabledReason), /不存在/)
+    assert.equal(before.body.status.disabledReason, undefined, '默认放行无 disabledReason')
 
-    // ② 点开关（菜单那一行发的就是这个请求，省略 enabled = 翻转）
+    // ② 点一下（省略 enabled = 翻转）：从开翻到关
     const toggled = await post(host, '/plugins/dsh-session-send/project', { project: dir })
     assert.equal(toggled.status, 200)
-    assert.equal(toggled.body.project.enabled, true)
-    assert.equal(toggled.body.status.enabled, true, 'service 必须已经热切换')
+    assert.equal(toggled.body.project.enabled, false)
+    assert.equal(toggled.body.status.enabled, false, 'service 必须已经热切换')
 
-    // ③ 文件真的写出来了，内容是最小可跑配置
+    // ③ 文件写出来：enabled:false + 最小 transport
     const raw = JSON.parse(await readFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), 'utf8'))
-    assert.equal(raw.enabled, true)
+    assert.equal(raw.enabled, false, '关掉是把 enabled 置 false，不是删文件')
     assert.equal(raw.transport.kind, 'sqlite')
     assert.equal(raw.scope, 'project')
 
-    // ④ 不用重启：立刻能发消息
-    const sent = await post(host, '/plugins/dsh-session-send/send', {
+    // ④ 关闭后立刻被门禁挡住
+    const denied = await post(host, '/plugins/dsh-session-send/send', {
       from: 's-1',
       to: 'beta',
-      payload: { text: 'just enabled' },
+      payload: { text: 'just disabled' },
     })
-    assert.equal(sent.status, 200)
-    assert.equal(sent.body.receipt.messages.length, 1)
-
-    // ⑤ 工具侧也通了（同一份 runtime）
-    const agentsTool = host.tools.get('dsh_bus_agents')
-    const list = await agentsTool.execute({}, { agent: { id: 's-1' } })
-    assert.equal(list.agents.length, 2)
+    assert.equal(denied.status, 409)
+    assert.equal(denied.body.error.code, 'E_DISABLED')
   } finally {
     host?.dispose?.()
     await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('再点一下关闭：写盘 + 热生效，消息接口立刻回到 E_DISABLED', async () => {
+test('点回开启：写盘(enabled:true) + 热生效，随后立刻能发消息（不重启）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-switch-'))
   let host
   try {
     host = fakeHost()
-    host.services.set('agents', { list: () => [{ id: 's-1', session: { header: { title: 'alpha' } } }] })
-    await apply(host.ctx, { projectRoot: dir, enabled: true })
+    host.services.set('agents', {
+      list: () => [
+        { id: 's-1', session: { header: { title: 'alpha', cwd: dir } } },
+        { id: 's-2', session: { header: { title: 'beta', cwd: dir } } },
+      ],
+      get: (id) => ({ id }),
+    })
+    await apply(host.ctx, { projectRoot: dir })
 
+    // 默认「报名后才参与」——先让两个会话报名
+    const registerTool = host.tools.get('dsh_bus_register')
+    await registerTool.execute({ name: 'alpha' }, { agent: { id: 's-1' } })
+    await registerTool.execute({ name: 'beta' }, { agent: { id: 's-2' } })
+
+    // 先关一次（写 enabled:false），再点回开
     await post(host, '/plugins/dsh-session-send/project', { project: dir })
-    const off = await post(host, '/plugins/dsh-session-send/project', { project: dir })
-    assert.equal(off.body.project.enabled, false)
-    assert.equal(off.body.status.enabled, false)
+    const backOn = await post(host, '/plugins/dsh-session-send/project', { project: dir })
+    assert.equal(backOn.status, 200)
+    assert.equal(backOn.body.project.enabled, true)
+    assert.equal(backOn.body.status.enabled, true, 'service 必须已经热切换')
 
     const raw = JSON.parse(await readFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), 'utf8'))
-    assert.equal(raw.enabled, false, '关掉是把 enabled 置 false，不是删文件')
+    assert.equal(raw.enabled, true)
+    assert.equal(raw.transport.kind, 'sqlite')
+    assert.equal(raw.scope, 'project')
 
-    const denied = await post(host, '/plugins/dsh-session-send/send', {
+    // 不用重启：立刻能发消息
+    const sent = await post(host, '/plugins/dsh-session-send/send', {
       from: 's-1',
-      to: 's-1',
-      payload: { text: 'x' },
+      to: 'beta',
+      payload: { text: 'back on' },
     })
-    assert.equal(denied.status, 409)
-    assert.equal(denied.body.error.code, 'E_DISABLED')
+    assert.equal(sent.status, 200)
+    assert.equal(sent.body.receipt.messages.length, 1)
+
+    const agentsTool = host.tools.get('dsh_bus_agents')
+    const list = await agentsTool.execute({}, { agent: { id: 's-1' } })
+    assert.equal(list.agents.length, 2)
   } finally {
     host?.dispose?.()
     await rm(dir, { recursive: true, force: true })
@@ -222,7 +232,7 @@ test('GET /project：读状态，不创建配置文件', async () => {
     // 那是装配行为，与本用例要守的「读状态不写配置文件」无关。
     const state = await call(host, `/plugins/dsh-session-send/project?project=${encodeURIComponent(dir)}`)
     assert.equal(state.status, 200)
-    assert.equal(state.body.project.enabled, false)
+    assert.equal(state.body.project.enabled, true, '无文件默认放行')
     assert.equal(state.body.project.present, false)
 
     const { readdir } = await import('node:fs/promises')
@@ -247,7 +257,7 @@ test('GET /project 读「另一个」项目：不在那边建任何东西（不�
     await apply(host.ctx, { projectRoot: home, enabled: true })
     const state = await call(host, `/plugins/dsh-session-send/project?project=${encodeURIComponent(other)}`)
     assert.equal(state.status, 200)
-    assert.equal(state.body.project.enabled, false)
+    assert.equal(state.body.project.enabled, true, '无文件默认放行')
 
     const { readdir } = await import('node:fs/promises')
     assert.deepEqual(await readdir(other), [], '探测另一个项目不该在它目录里留下任何东西（含 .dsh-bus/）')
@@ -295,12 +305,13 @@ test('切到「另一个」项目：为那个项目建配置，且不影响当�
     host = fakeHost()
     await apply(host.ctx, { projectRoot: home, enabled: true })
 
+    // post 省略 enabled = toggle：other 默认放行（开），点一下翻到关
     const state = await post(host, '/plugins/dsh-session-send/project', { project: other })
     assert.equal(state.body.project.projectRoot, other)
-    assert.equal(state.body.project.enabled, true)
+    assert.equal(state.body.project.enabled, false, '默认放行下切到另一项目=toggle 关闭')
 
     const otherRaw = JSON.parse(await readFile(join(other, DEFAULT_PROJECT_CONFIG_NAME), 'utf8'))
-    assert.equal(otherRaw.enabled, true)
+    assert.equal(otherRaw.enabled, false)
 
     const { existsSync } = await import('node:fs')
     assert.equal(existsSync(join(home, DEFAULT_PROJECT_CONFIG_NAME)), false, 'home 项目不该被连带写')

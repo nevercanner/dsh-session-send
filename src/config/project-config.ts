@@ -13,7 +13,7 @@
  *
  * ── 文件约定 ─────────────────────────────────────────────────
  * 路径：`<workspace>/.dsh-bus.json`（文件名可由 Config.projectConfigName 改）
- * 不存在 = 本项目不启用（默认）。存在且 `enabled: true` = 本项目启用。
+ * 不存在 = 本项目启用（**默认放行**，与 dsh-context-bridge 一致）。只有显式 `enabled: false` 才关闭。
  *
  * ```json
  * {
@@ -39,7 +39,7 @@ export interface LoadedProjectConfig extends ConfigValidation {
   projectRoot: string
   /** 项目配置文件的完整路径。 */
   projectConfigPath: string
-  /** 文件是否存在。不存在 = 本项目未启用。 */
+  /** 文件是否存在。不存在 = 默认放行（启用）。 */
   present: boolean
   /** 是否存在但读不出来（坏 JSON / 权限）。此时强制关闭。 */
   degraded: boolean
@@ -65,7 +65,7 @@ export async function loadProjectConfig(options: LoadProjectConfigOptions): Prom
   let block: unknown
 
   if (!existsSync(projectConfigPath)) {
-    // 默认状态：文件不存在 → 本项目不启用。这是设计要求的默认关闭，不是错误。
+    // 默认状态：文件不存在 → 本项目启用（默认放行）。设计上与 dsh-context-bridge 对齐。
   } else {
     present = true
     try {
@@ -85,11 +85,8 @@ export async function loadProjectConfig(options: LoadProjectConfigOptions): Prom
     // 配置不明就绝不开放通信：宁可关着。
     validation.value.enabled = false
   }
-  // 项目文件不存在时也强制关闭（即使 profile patch 里 enabled=true）——
-  // 「仅项目内手动开启」是硬约束，不能靠 profile 一次性放开所有项目。
-  if (!present) {
-    validation.value.enabled = false
-  }
+  // 项目文件不存在 = 默认放行（与 dsh-context-bridge 一致），enabled 沿用 base/默认值。
+  // 只有显式写了 enabled:false（present 且关）才真正关闭 —— 不再有「无文件强制关」的硬约束。
 
   for (const warning of warnings) options.logger?.warn?.(`[dsh-session-send] ${warning}`)
 
@@ -106,7 +103,7 @@ export async function loadProjectConfig(options: LoadProjectConfigOptions): Prom
 /** 给 UI 展示的一句话说明：为什么现在没开。 */
 export function disabledReason(loaded: LoadedProjectConfig): string {
   if (loaded.degraded) return `${DEFAULT_PROJECT_CONFIG_NAME} 解析失败，已强制关闭`
-  if (!loaded.present) return `本项目未启用：${loaded.projectConfigPath} 不存在`
-  if (!loaded.value.enabled) return `${loaded.projectConfigPath} 里 enabled 不是 true`
+  if (!loaded.present) return '' // 默认放行：无文件 = 启用，不会出现在这里
+  if (!loaded.value.enabled) return `${loaded.projectConfigPath} 里显式写了 enabled:false`
   return ''
 }

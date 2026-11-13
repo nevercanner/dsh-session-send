@@ -2,9 +2,9 @@
  * 测试 2：配置校验 + **项目级**配置读取（`<workspace>/.dsh-bus.json`）。
  *
  * 关键约束：
- *  - enabled 默认 false（任何缺失都落到关闭）；
+ *  - enabled 默认放行 true（任何缺失都落到开启，需显式 false 才关）；
  *  - scope 强制 project（不允许全局生效形态）；
- *  - 项目配置文件不存在 → 关闭（即使 profile patch 里 enabled=true）；
+ *  - 项目配置文件不存在 → 开启（默认放行）；
  *  - 坏 JSON → 关闭并标记 degraded；
  *  - profile 侧配置是底、项目文件覆盖。
  *
@@ -18,17 +18,18 @@ import { join } from 'node:path'
 import { DEFAULT_CONFIG, mergeConfig, validateConfig, validateFallback } from '../src/config/schema.ts'
 import { loadProjectConfig, disabledReason, DEFAULT_PROJECT_CONFIG_NAME } from '../src/config/project-config.ts'
 
-test('默认配置：enabled=false，scope=project，来源只含 DSH 自身', async () => {
+test('默认配置：enabled=true（默认放行），scope=project，来源只含 DSH 自身', async () => {
   const { value } = await validateConfig({})
-  assert.equal(value.enabled, false)
+  assert.equal(value.enabled, true)
   assert.equal(value.scope, 'project')
   assert.equal(value.transport.kind, 'sqlite')
   assert.deepEqual(value.registry.sources, ['dsh-team', 'dsh-sessions'])
 })
 
-test('空/undefined 配置也落到关闭', async () => {
-  assert.equal((await validateConfig(undefined)).value.enabled, false)
-  assert.equal((await validateConfig(null)).value.enabled, false)
+test('空/undefined 配置落到开启（默认放行）；显式 true 也开，显式 false 关', async () => {
+  assert.equal((await validateConfig(undefined)).value.enabled, true)
+  assert.equal((await validateConfig(null)).value.enabled, true)
+  assert.equal((await validateConfig({ enabled: false })).value.enabled, false)
   assert.equal((await validateConfig({ enabled: true })).value.enabled, true)
 })
 
@@ -64,8 +65,8 @@ test('mergeConfig：对象深合并，标量覆盖', () => {
 test('loadProjectConfig：项目文件不存在 → 关闭（默认状态，不是错误）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-proj-'))
   try {
-    const loaded = await loadProjectConfig({ projectRoot: dir, baseConfig: { enabled: true } })
-    assert.equal(loaded.value.enabled, false, '项目文件不存在时，profile 的 enabled=true 不能放开')
+    const loaded = await loadProjectConfig({ projectRoot: dir })
+    assert.equal(loaded.value.enabled, true, '无文件默认放行')
     assert.equal(loaded.present, false)
     assert.equal(loaded.degraded, false)
     assert.equal(loaded.projectConfigPath, join(dir, DEFAULT_PROJECT_CONFIG_NAME))
@@ -119,18 +120,18 @@ test('loadProjectConfig：存在但 enabled=false → 关闭，且能给出一�
     await writeFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), JSON.stringify({ enabled: false }), 'utf8')
     const loaded = await loadProjectConfig({ projectRoot: dir, baseConfig: { enabled: true } })
     assert.equal(loaded.value.enabled, false)
-    assert.match(disabledReason(loaded), /enabled 不是 true/)
+    assert.match(disabledReason(loaded), /enabled:false/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('空文件视为 {} —— 仍然关闭', async () => {
+test('空文件视为 {} —— 默认放行（开启）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-proj-'))
   try {
     await writeFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), '   \n', 'utf8')
     const loaded = await loadProjectConfig({ projectRoot: dir })
-    assert.equal(loaded.value.enabled, false)
+    assert.equal(loaded.value.enabled, true)
     assert.equal(loaded.degraded, false)
   } finally {
     await rm(dir, { recursive: true, force: true })

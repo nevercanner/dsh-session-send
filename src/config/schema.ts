@@ -1,7 +1,8 @@
 /**
  * 配置校验（zod / 降级双路径）。
  *
- * 语义：**默认关闭**。任何缺失字段都落到 enabled=false —— 宁可不生效也不要误开。
+ * 语义：**默认放行**（与 dsh-context-bridge 一致）。文件缺失 / 字段缺失 = 可用，
+ *    只有显式写 enabled=false 才关闭 —— 项目级开关默认不该拦新项目。
  *
  * 注意配置的来源：本插件是 **DSH** 插件，项目级开关来自
  * `<workspace>/.dsh-bus.json`（见 ./project-config.ts），
@@ -13,7 +14,7 @@ import { importZod } from '../host-modules.ts'
 export const TRANSPORT_KINDS: readonly TransportKind[] = ['sqlite', 'file', 'in-process']
 
 export const DEFAULT_CONFIG: BusConfig = {
-  enabled: false,
+  enabled: true,
   scope: 'project',
   transport: { kind: 'sqlite' },
   registry: { sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams', requireRegistration: true },
@@ -21,6 +22,7 @@ export const DEFAULT_CONFIG: BusConfig = {
     allowBroadcast: true,
     maxPayloadChars: 20000,
     dshTeam: { enabled: true, target: 'auto' },
+    redeliver: { enabled: false, maxAttempts: 3 },
   },
   labels: {},
   ui: { entry: true, pollMs: 4000 },
@@ -77,7 +79,7 @@ function asEnum<T extends string>(
 export function validateFallback(raw: unknown): ConfigValidation {
   const warnings: string[] = []
   if (!isObject(raw)) {
-    return { value: structuredClone(DEFAULT_CONFIG), warnings: ['配置不是对象，已整体使用默认值（enabled=false）'] }
+    return { value: structuredClone(DEFAULT_CONFIG), warnings: ['配置不是对象，已整体使用默认值（enabled=true，默认放行）'] }
   }
 
   if (raw['scope'] !== undefined && raw['scope'] !== 'project') {
@@ -88,6 +90,7 @@ export function validateFallback(raw: unknown): ConfigValidation {
   const registryRaw = isObject(raw['registry']) ? raw['registry'] : {}
   const routerRaw = isObject(raw['router']) ? raw['router'] : {}
   const dshTeamRaw = isObject(routerRaw['dshTeam']) ? routerRaw['dshTeam'] : {}
+  const redeliverRaw = isObject(routerRaw['redeliver']) ? routerRaw['redeliver'] : {}
   const uiRaw = isObject(raw['ui']) ? raw['ui'] : {}
 
   // labels：session id → 可读名。只接受字符串值，忽略其它类型。
@@ -155,6 +158,16 @@ export function validateFallback(raw: unknown): ConfigValidation {
           warnings,
         ),
       },
+      redeliver: {
+        enabled: asBool(redeliverRaw['enabled'], DEFAULT_CONFIG.router.redeliver.enabled, 'router.redeliver.enabled', warnings),
+        maxAttempts: asInt(
+          redeliverRaw['maxAttempts'],
+          DEFAULT_CONFIG.router.redeliver.maxAttempts,
+          'router.redeliver.maxAttempts',
+          warnings,
+          1,
+        ),
+      },
     },
     labels,
     ui: {
@@ -186,17 +199,28 @@ export function createZodSchema(z: any): any {
         target: z.enum(['auto', 'service', 'mailbox']).default('auto'),
       })
       .default({ enabled: true, target: 'auto' }),
+    redeliver: z
+      .object({
+        enabled: z.boolean().default(false),
+        maxAttempts: z.number().int().min(1).max(20).default(3),
+      })
+      .default({ enabled: false, maxAttempts: 3 }),
   })
   const ui = z.object({
     entry: z.boolean().default(true),
     pollMs: z.number().int().min(500).default(4000),
   })
   return z.object({
-    enabled: z.boolean().default(false),
+    enabled: z.boolean().default(true),
     scope: z.literal('project').default('project'),
     transport: transport.default({ kind: 'sqlite' }),
     registry: registry.default({ sources: ['dsh-team', 'dsh-sessions'], stateDir: '.agent-teams', requireRegistration: true }),
-    router: router.default({ allowBroadcast: true, maxPayloadChars: 20000, dshTeam: { enabled: true, target: 'auto' } }),
+    router: router.default({
+      allowBroadcast: true,
+      maxPayloadChars: 20000,
+      dshTeam: { enabled: true, target: 'auto' },
+      redeliver: { enabled: false, maxAttempts: 3 },
+    }),
     labels: z.record(z.string(), z.string()).default({}),
     ui: ui.default({ entry: true, pollMs: 4000 }),
   })

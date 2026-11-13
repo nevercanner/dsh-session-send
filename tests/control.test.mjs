@@ -45,16 +45,18 @@ function makeControl(withReconfigure = true) {
   return { control, reconfigured }
 }
 
-test('首次开启：创建配置文件，enabled=true + 最小 transport', async () => {
+test('首次 toggle（默认放行）：初始开启，点一下=关闭，创建 enabled:false + 最小 transport', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-ctl-'))
   try {
     const { control, reconfigured } = makeControl()
+    // 无文件 → 默认放行开启
+    assert.equal((await control.status(dir)).enabled, true)
     const state = await control.toggle(dir)
-    assert.equal(state.enabled, true)
+    assert.equal(state.enabled, false, '默认放行下 toggle 从开翻到关')
     assert.equal(reconfigured.length, 1, '切换后必须热装配一次')
 
     const raw = JSON.parse(await readFile(join(dir, DEFAULT_PROJECT_CONFIG_NAME), 'utf8'))
-    assert.equal(raw.enabled, true)
+    assert.equal(raw.enabled, false, '关闭就是写 enabled:false 持久化')
     assert.equal(raw.transport.kind, 'sqlite')
     assert.equal(raw.scope, 'project')
   } finally {
@@ -62,7 +64,7 @@ test('首次开启：创建配置文件，enabled=true + 最小 transport', asyn
   }
 })
 
-test('再次切换 = 关闭，但**保留**用户手写的其它字段', async () => {
+test('已开项目 toggle = 关闭，但**保留**用户手写的其它字段', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'dshbus-ctl-'))
   try {
     await writeFile(
@@ -161,7 +163,7 @@ test('status：只读，不创建任何文件', async () => {
   try {
     const { control } = makeControl()
     const state = await control.status(dir)
-    assert.equal(state.enabled, false)
+    assert.equal(state.enabled, true, '无文件默认放行')
     assert.equal(state.present, false)
     const { readdir } = await import('node:fs/promises')
     assert.deepEqual(await readdir(dir), [], 'status 不该写盘')

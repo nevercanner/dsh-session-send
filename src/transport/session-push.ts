@@ -94,6 +94,9 @@ export class SessionPusher {
     if (text.trim() === '') throw new BusError('E_PAYLOAD_EMPTY', '要推送的正文为空')
 
     let agent = this.agentOf(target)
+    // 已在跑的 agent 若缺 provider/model（旧版冷启动留下的坏实例），就地补齐，
+    // 否则它看着 live/idle，下一次 turn 会立刻抛 has no provider/model。
+    if (agent !== undefined) this.ensureModel(agent)
     let resumed = false
     if (agent === undefined && options.resume !== false) {
       // 目标不在本进程：尝试冷启动（把持久化会话载入内存）
@@ -190,13 +193,54 @@ export class SessionPusher {
    * 这是官方「从持久化恢复一个 Agent」的入口，不自己造会话。
    * 拿不到 agentLoop 或恢复失败都返回 undefined，让上层降级为 durable。
    */
+  /**
+   * 从宿主的默认模型服务取 provider/model。
+   * UI 路径（api-session-controller.agentOptions）就是这么补的；bus 的冷启动不补的话，
+   * agent 一跑 turn 就报 'has no provider/model'（2026-11 实测）。
+   */
+  private defaultAgentOptions(): { provider: string; model: string } | undefined {
+    try {
+      const ctx = this.options.ctx as any
+      const adm = ctx?.get?.('agentDefaultModel') ?? ctx?.agentDefaultModel
+      const sel = adm?.currentSelection?.()
+      if (sel === undefined || sel === null || sel.provider === undefined || sel.model === undefined) return undefined
+      return { provider: sel.provider, model: sel.model }
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * 已经在跑的 agent 如果缺 provider/model（旧版冷启动留下的），就地补齐。
+   * 不补的话它看着是 live/idle，但下一次 turn 立刻 error。
+   */
+  private ensureModel(agent: any): boolean {
+    try {
+      const opt = agent?.options
+      if (opt === undefined || opt === null) return false
+      if (opt.provider !== undefined && opt.model !== undefined) return false
+      const next = this.defaultAgentOptions()
+      if (next === undefined) return false
+      opt.provider = next.provider
+      opt.model = next.model
+      this.options.logger?.info?.(`[dsh-session-send] 已给无模型 agent 补上 ${next.provider}/${next.model}`)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   private async resume(sessionId: string): Promise<{ agent?: any; resumed: boolean; error?: string }> {
     const loop = this.options.ctx?.get?.('agentLoop') ?? this.options.ctx?.agentLoop
     if (typeof loop?.resume !== 'function') {
       return { resumed: false, error: '宿主未提供 agentLoop.resume，无法冷启动目标会话' }
     }
     try {
-      const handle = await loop.resume(this.options.ctx, { resumeSessionId: sessionId })
+      const agentOptions = this.defaultAgentOptions()
+      const handle = await loop.resume(this.options.ctx, {
+        resumeSessionId: sessionId,
+        ...(agentOptions === undefined ? {} : { agentOptions }),
+      })
       const agent = handle?.agent ?? handle
       if (agent === undefined || agent === null) {
         return { resumed: false, error: '冷启动返回空句柄' }
